@@ -316,16 +316,39 @@ async function main() {
   // Connect to database
   await connectDB();
 
+  // Debug: Check all bots first
+  const allBots = await BotSettings.find({}).select('botId name telegram').lean() as any[];
+  console.log(`📋 Total bots in database: ${allBots.length}`);
+  allBots.forEach((bot, index) => {
+    console.log(`   ${index + 1}. Bot: "${bot.botId}"`);
+    console.log(`      Name: ${bot.name}`);
+    console.log(`      Telegram enabled: ${bot.telegram?.enabled || false}`);
+    console.log(`      Has token: ${!!bot.telegram?.botToken}`);
+    console.log(`      Token length: ${bot.telegram?.botToken?.length || 0}`);
+  });
+
   // Get all enabled bots
   const bots = await BotSettings.find({
     'telegram.enabled': true,
     'telegram.botToken': { $exists: true }
   }).select('botId name userId telegram welcomeMessage faqs documents urls structuredData updatedAt').lean() as any[];
 
+  console.log(`🔍 Query result: Found ${bots.length} enabled bot(s) with token`);
+
   if (bots.length === 0) {
-    console.error('❌ No enabled Telegram bots found in database');
+    console.warn('⚠️ No enabled Telegram bots found in database');
     console.log('💡 Please enable at least one bot in the dashboard');
-    process.exit(1);
+    console.log('🔄 Will retry in 30 seconds...');
+    
+    // Retry sau 30 giây thay vì exit
+    setTimeout(() => {
+      console.log('🔄 Retrying to find enabled bots...');
+      main().catch((error) => {
+        console.error('❌ Fatal error:', error);
+        setTimeout(() => main(), 30000);
+      });
+    }, 30000);
+    return;
   }
 
   console.log(`✅ Found ${bots.length} enabled bot(s)`);
