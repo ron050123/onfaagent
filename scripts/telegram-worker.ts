@@ -371,7 +371,8 @@ process.on('SIGINT', async () => {
   console.log('\n🛑 Shutting down gracefully...');
   
   // Stop all bots
-  for (const bot of botInstances.values()) {
+  const bots = Array.from(botInstances.values());
+  for (const bot of bots) {
     try {
       bot.stopPolling();
     } catch (error) {
