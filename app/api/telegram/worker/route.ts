@@ -8,6 +8,11 @@ import { handleTelegramMessage } from '@/lib/services/telegramService';
  * Note: QStash automatically verifies requests using the QSTASH_TOKEN.
  * For additional security, you can add signature verification later.
  */
+
+// Force dynamic rendering - worker should never be pre-rendered
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
   try {
     const body = await request.json();

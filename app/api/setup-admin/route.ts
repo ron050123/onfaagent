@@ -3,6 +3,10 @@ import bcrypt from 'bcryptjs';
 import connectDB from '@/lib/db';
 import User from '@/lib/models/User';
 
+// Force dynamic rendering - this route should never be pre-rendered
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
   try {
     const { email, password, name } = await request.json();

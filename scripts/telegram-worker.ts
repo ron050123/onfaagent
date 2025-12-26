@@ -1,0 +1,398 @@
+/**
+ * Standalone Telegram Bot Worker
+ * 
+ * This worker runs independently and uses Telegram Bot API with long polling
+ * to receive and process messages directly, without relying on Vercel webhooks.
+ * 
+ * Deploy this on Railway, Render, DigitalOcean, or any Node.js hosting service.
+ * 
+ * Usage:
+ *   npm run worker:telegram
+ *   or
+ *   tsx scripts/telegram-worker.ts
+ */
+
+import TelegramBot from 'node-telegram-bot-api';
+import mongoose from 'mongoose';
+import BotSettings from '../lib/models/BotSettings';
+import Message from '../lib/models/Message';
+import { processChatMessage } from '../lib/services/chatService';
+
+// Environment variables
+const MONGODB_URI = process.env.MONGODB_URI;
+const MONGODB_DB = process.env.MONGODB_DB || 'chatbotdb';
+const OPENAI_API_KEY = process.env.OPENAI_API_KEY;
+const POLLING_INTERVAL = 1000; // 1 second
+
+if (!MONGODB_URI) {
+  console.error('❌ MONGODB_URI environment variable is required');
+  process.exit(1);
+}
+
+if (!OPENAI_API_KEY) {
+  console.error('❌ OPENAI_API_KEY environment variable is required');
+  process.exit(1);
+}
+
+// Cache for bot settings
+const botSettingsCache = new Map<string, { settings: any; timestamp: number }>();
+const BOT_SETTINGS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
+
+// Store active bot instances
+const botInstances = new Map<string, TelegramBot>();
+
+/**
+ * Connect to MongoDB
+ */
+async function connectDB() {
+  try {
+    if (mongoose.connection.readyState === 1) {
+      return mongoose.connection;
+    }
+
+    await mongoose.connect(MONGODB_URI!, {
+      dbName: MONGODB_DB,
+      bufferCommands: false,
+      maxPoolSize: 10,
+      serverSelectionTimeoutMS: 5000,
+      socketTimeoutMS: 45000,
+    });
+
+    console.log('✅ Connected to MongoDB');
+    return mongoose.connection;
+  } catch (error) {
+    console.error('❌ MongoDB connection error:', error);
+    throw error;
+  }
+}
+
+/**
+ * Get bot settings from database
+ */
+async function getBotSettings(botId?: string): Promise<any | null> {
+  await connectDB();
+
+  if (botId) {
+    const normalizedBotId = botId.trim();
+    const cacheKey = `telegram_${normalizedBotId}`;
+    const cached = botSettingsCache.get(cacheKey);
+    
+    if (cached && Date.now() - cached.timestamp < BOT_SETTINGS_CACHE_TTL) {
+      return cached.settings;
+    }
+
+    const botSettings = await BotSettings.findOne({
+      botId: normalizedBotId,
+      'telegram.enabled': true,
+      'telegram.botToken': { $exists: true }
+    }).select('botId name userId telegram welcomeMessage faqs documents urls structuredData updatedAt').lean() as any;
+
+    if (botSettings) {
+      botSettingsCache.set(cacheKey, { settings: botSettings, timestamp: Date.now() });
+    }
+
+    return botSettings;
+  }
+
+  // Get first enabled bot
+  const bots = await BotSettings.find({
+    'telegram.enabled': true,
+    'telegram.botToken': { $exists: true }
+  }).select('botId name userId telegram welcomeMessage faqs documents urls structuredData updatedAt').lean() as any[];
+
+  return bots.length > 0 ? bots[0] : null;
+}
+
+/**
+ * Send typing indicator
+ */
+async function sendTypingIndicator(bot: TelegramBot, chatId: number): Promise<void> {
+  try {
+    await bot.sendChatAction(chatId, 'typing');
+  } catch (error) {
+    // Ignore typing indicator errors
+  }
+}
+
+/**
+ * Send message with retry logic
+ */
+async function sendMessage(
+  bot: TelegramBot,
+  chatId: number,
+  message: string,
+  options?: TelegramBot.SendMessageOptions
+): Promise<TelegramBot.Message> {
+  const maxRetries = 3;
+  let lastError: any = null;
+
+  for (let attempt = 1; attempt <= maxRetries; attempt++) {
+    try {
+      const result = await bot.sendMessage(chatId, message, {
+        ...options,
+        parse_mode: 'HTML'
+      });
+      return result;
+    } catch (error: any) {
+      lastError = error;
+      const errorCode = error.code || error.response?.statusCode;
+
+      if (errorCode === 400 || errorCode === 401 || errorCode === 403 || errorCode === 404) {
+        throw error;
+      }
+
+      if (attempt < maxRetries) {
+        const waitTime = Math.min(1000 * Math.pow(2, attempt - 1), 5000);
+        await new Promise(resolve => setTimeout(resolve, waitTime));
+      }
+    }
+  }
+
+  throw lastError || new Error('Failed to send Telegram message');
+}
+
+/**
+ * Handle incoming message
+ */
+async function handleMessage(bot: TelegramBot, botSettings: any, message: TelegramBot.Message) {
+  const chatId = message.chat.id;
+  let text = message.text || '';
+  const userId = message.from?.id.toString();
+
+  console.log(`🤖 Processing message: chatId=${chatId}, text="${text}"`);
+
+  // Handle /start command
+  if (text === '/start') {
+    try {
+      await sendMessage(
+        bot,
+        chatId,
+        botSettings.welcomeMessage || `Xin chào! Tôi là ${botSettings.name}. Tôi có thể giúp gì cho bạn?`
+      );
+      return;
+    } catch (error) {
+      console.error('❌ Error sending welcome message:', error);
+      return;
+    }
+  }
+
+  // Ignore empty messages
+  if (!text.trim()) {
+    return;
+  }
+
+  // Ignore group messages unless bot is mentioned
+  if (message.chat.type !== 'private') {
+    const botUsername = botSettings.telegram.botUsername;
+    if (botUsername && !text.includes(`@${botUsername}`)) {
+      return;
+    }
+    text = text.replace(`@${botUsername}`, '').trim();
+  }
+
+  // Send typing indicator
+  sendTypingIndicator(bot, chatId).catch(() => {});
+
+  const typingInterval = setInterval(() => {
+    sendTypingIndicator(bot, chatId).catch(() => {});
+  }, 2000);
+
+  try {
+    // Process with AI
+    console.log(`🤖 Processing message with AI: "${text}"`);
+    
+    const reply = await processChatMessage(
+      botSettings,
+      text,
+      OPENAI_API_KEY!,
+      'telegram'
+    );
+
+    clearInterval(typingInterval);
+    console.log(`✅ AI reply generated: "${reply.substring(0, 50)}..."`);
+
+    // Send reply
+    await sendMessage(bot, chatId, reply);
+    console.log('✅ Reply sent to Telegram');
+
+    // Track message asynchronously
+    setImmediate(async () => {
+      try {
+        const messageRecord = new Message({
+          userId: botSettings.userId,
+          botId: botSettings.botId,
+          message: text,
+          response: reply,
+          timestamp: new Date(),
+          sessionId: `telegram_${chatId}`
+        });
+        await messageRecord.save();
+        console.log('✅ Message tracked in database');
+      } catch (trackingError) {
+        console.error('⚠️ Error tracking message:', trackingError);
+      }
+    });
+  } catch (error: any) {
+    clearInterval(typingInterval);
+    console.error('❌ Error processing message:', error);
+
+    const errorMsg = error.message?.includes('timeout')
+      ? 'Xin lỗi, yêu cầu của bạn mất quá nhiều thời gian để xử lý. Vui lòng thử lại sau.'
+      : error.message?.includes('Rate limit')
+      ? 'Xin lỗi, hệ thống đang quá tải. Vui lòng thử lại sau vài giây.'
+      : 'Xin lỗi, tôi đang gặp sự cố khi xử lý tin nhắn của bạn. Vui lòng thử lại sau.';
+
+    try {
+      await sendMessage(bot, chatId, errorMsg);
+    } catch {
+      // Ignore if sending error message fails
+    }
+  }
+}
+
+/**
+ * Initialize and start bot with polling
+ */
+async function startBot(botSettings: any) {
+  const token = botSettings.telegram.botToken;
+  if (!token) {
+    console.error(`❌ Bot ${botSettings.botId} has no token`);
+    return null;
+  }
+
+  // Check if bot instance already exists
+  if (botInstances.has(token)) {
+    return botInstances.get(token)!;
+  }
+
+  console.log(`🚀 Starting bot: ${botSettings.name} (${botSettings.botId})`);
+
+  // Create bot instance with polling enabled
+  const bot = new TelegramBot(token, {
+    polling: {
+      interval: POLLING_INTERVAL,
+      autoStart: false,
+      params: {
+        timeout: 10,
+      }
+    }
+  });
+
+  // Set up message handler
+  bot.on('message', async (msg) => {
+    try {
+      await handleMessage(bot, botSettings, msg);
+    } catch (error) {
+      console.error('❌ Error in message handler:', error);
+    }
+  });
+
+  // Set up error handler
+  bot.on('error', (error) => {
+    console.error('❌ Bot error:', error);
+  });
+
+  // Start polling
+  bot.startPolling().catch((error) => {
+    console.error('❌ Failed to start polling:', error);
+  });
+
+  botInstances.set(token, bot);
+  console.log(`✅ Bot ${botSettings.name} is now polling for messages`);
+
+  return bot;
+}
+
+/**
+ * Main function
+ */
+async function main() {
+  console.log('🚀 Starting Telegram Worker Service...');
+  console.log('📋 Configuration:');
+  console.log(`   - MongoDB: ${MONGODB_URI ? 'Configured' : 'Missing'}`);
+  console.log(`   - OpenAI API: ${OPENAI_API_KEY ? 'Configured' : 'Missing'}`);
+  console.log(`   - Polling interval: ${POLLING_INTERVAL}ms`);
+
+  // Connect to database
+  await connectDB();
+
+  // Get all enabled bots
+  const bots = await BotSettings.find({
+    'telegram.enabled': true,
+    'telegram.botToken': { $exists: true }
+  }).select('botId name userId telegram welcomeMessage faqs documents urls structuredData updatedAt').lean() as any[];
+
+  if (bots.length === 0) {
+    console.error('❌ No enabled Telegram bots found in database');
+    console.log('💡 Please enable at least one bot in the dashboard');
+    process.exit(1);
+  }
+
+  console.log(`✅ Found ${bots.length} enabled bot(s)`);
+
+  // Start all bots
+  for (const botSettings of bots) {
+    try {
+      await startBot(botSettings);
+    } catch (error) {
+      console.error(`❌ Failed to start bot ${botSettings.botId}:`, error);
+    }
+  }
+
+  // Refresh bot list every 5 minutes
+  setInterval(async () => {
+    try {
+      const updatedBots = await BotSettings.find({
+        'telegram.enabled': true,
+        'telegram.botToken': { $exists: true }
+      }).select('botId name userId telegram welcomeMessage faqs documents urls structuredData updatedAt').lean() as any[];
+
+      // Start new bots
+      for (const botSettings of updatedBots) {
+        if (!botInstances.has(botSettings.telegram.botToken)) {
+          console.log(`🆕 Found new bot: ${botSettings.name}`);
+          await startBot(botSettings);
+        }
+      }
+
+      // Clear cache
+      botSettingsCache.clear();
+    } catch (error) {
+      console.error('❌ Error refreshing bot list:', error);
+    }
+  }, 5 * 60 * 1000); // 5 minutes
+
+  console.log('✅ Telegram Worker Service is running');
+  console.log('💡 Press Ctrl+C to stop');
+}
+
+// Handle graceful shutdown
+process.on('SIGINT', async () => {
+  console.log('\n🛑 Shutting down gracefully...');
+  
+  // Stop all bots
+  for (const bot of botInstances.values()) {
+    try {
+      bot.stopPolling();
+    } catch (error) {
+      console.error('Error stopping bot:', error);
+    }
+  }
+
+  // Close database connection
+  try {
+    await mongoose.connection.close();
+    console.log('✅ Database connection closed');
+  } catch (error) {
+    console.error('Error closing database:', error);
+  }
+
+  process.exit(0);
+});
+
+// Start the service
+main().catch((error) => {
+  console.error('❌ Fatal error:', error);
+  process.exit(1);
+});
+

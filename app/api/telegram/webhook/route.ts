@@ -3,6 +3,10 @@ import TelegramBot from 'node-telegram-bot-api';
 import { handleTelegramMessage } from '@/lib/services/telegramService';
 import { queueTelegramMessage, isQueueAvailable } from '@/lib/services/queueService';
 
+// Force dynamic rendering - webhook should never be pre-rendered
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
   try {
     const update: TelegramBot.Update = await request.json();
@@ -27,6 +31,7 @@ export async function POST(request: NextRequest) {
     });
     
     // Try to queue the message for async processing (faster response)
+    // But if queue fails, process immediately to ensure message is handled
     const queued = await queueTelegramMessage(update, botId || undefined);
     
     if (queued) {
@@ -38,17 +43,22 @@ export async function POST(request: NextRequest) {
         message: 'Message queued for processing'
       });
     } else {
-      // Fallback: process synchronously if queue not available
-      console.log('⚠️ Queue not available, processing synchronously');
+      // IMPORTANT: Process synchronously if queue not available
+      // This ensures messages are always handled, even without queue
+      console.log('⚠️ Queue not available, processing synchronously (fallback mode)');
+      
+      // Process immediately but don't wait for completion
+      // This prevents Telegram timeout while still processing the message
       handleTelegramMessage(update, botId || undefined).catch(error => {
         console.error('❌ Error processing Telegram update:', error);
         console.error('Error stack:', error instanceof Error ? error.stack : error);
       });
       
+      // Return immediately to Telegram (don't wait for processing)
       return NextResponse.json({ 
         ok: true, 
         queued: false,
-        message: 'Processing synchronously (queue not configured)'
+        message: 'Processing synchronously (queue not configured or failed)'
       });
     }
   } catch (error) {

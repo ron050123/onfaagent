@@ -10,7 +10,8 @@
     "seed": "node scripts/seed.js",
     "create-admin": "node scripts/create-admin.js",
     "populate-bots": "node scripts/populate-bots.js",
-    "populate-bots:ts": "tsx scripts/populate-bots.ts"
+    "populate-bots:ts": "tsx scripts/populate-bots.ts",
+    "worker:telegram": "tsx scripts/telegram-worker.ts"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.0.2",

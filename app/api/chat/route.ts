@@ -6,6 +6,10 @@ import { getServerSession } from 'next-auth';
 import { authOptions } from '@/lib/auth';
 import { processChatMessage } from '@/lib/services/chatService';
 
+// Force dynamic rendering - chat API should never be pre-rendered
+export const dynamic = 'force-dynamic';
+export const runtime = 'nodejs';
+
 export async function POST(request: NextRequest) {
   try {
     const { botId, message } = await request.json();
