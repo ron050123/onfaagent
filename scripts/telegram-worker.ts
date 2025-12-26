@@ -47,13 +47,25 @@ const botInstances = new Map<string, TelegramBot>();
 async function connectDB() {
   try {
     if (mongoose.connection.readyState === 1) {
-      console.log(`📊 Already connected to MongoDB. Database: ${mongoose.connection.db?.databaseName || 'unknown'}`);
+      const dbName = mongoose.connection.db?.databaseName || 'unknown';
+      console.log(`📊 Already connected to MongoDB. Database: ${dbName}`);
+      
+      // List collections
+      try {
+        const collections = await mongoose.connection.db?.listCollections().toArray();
+        const collectionNames = collections?.map((c: any) => c.name).join(', ') || 'none';
+        console.log(`   Collections: ${collectionNames}`);
+      } catch (err) {
+        console.log(`   Collections: (unable to list)`);
+      }
+      
       return mongoose.connection;
     }
 
     console.log(`🔌 Connecting to MongoDB...`);
-    console.log(`   URI: ${MONGODB_URI?.substring(0, 30)}...`);
-    console.log(`   Database name: ${MONGODB_DB}`);
+    const uriPreview = MONGODB_URI ? `${MONGODB_URI.substring(0, 30)}...` : 'not set';
+    console.log(`   URI preview: ${uriPreview}`);
+    console.log(`   Database name (MONGODB_DB): ${MONGODB_DB}`);
 
     await mongoose.connect(MONGODB_URI!, {
       dbName: MONGODB_DB,
@@ -66,7 +78,15 @@ async function connectDB() {
     const dbName = mongoose.connection.db?.databaseName || 'unknown';
     console.log(`✅ Connected to MongoDB`);
     console.log(`   Active database: ${dbName}`);
-    console.log(`   Collections: ${(await mongoose.connection.db?.listCollections().toArray())?.map((c: any) => c.name).join(', ') || 'none'}`);
+    
+    // List collections with error handling
+    try {
+      const collections = await mongoose.connection.db?.listCollections().toArray();
+      const collectionNames = collections?.map((c: any) => c.name).join(', ') || 'none';
+      console.log(`   Collections: ${collectionNames}`);
+    } catch (err) {
+      console.log(`   Collections: (unable to list - ${err instanceof Error ? err.message : String(err)})`);
+    }
     
     return mongoose.connection;
   } catch (error) {
