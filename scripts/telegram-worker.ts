@@ -47,8 +47,13 @@ const botInstances = new Map<string, TelegramBot>();
 async function connectDB() {
   try {
     if (mongoose.connection.readyState === 1) {
+      console.log(`📊 Already connected to MongoDB. Database: ${mongoose.connection.db?.databaseName || 'unknown'}`);
       return mongoose.connection;
     }
+
+    console.log(`🔌 Connecting to MongoDB...`);
+    console.log(`   URI: ${MONGODB_URI?.substring(0, 30)}...`);
+    console.log(`   Database name: ${MONGODB_DB}`);
 
     await mongoose.connect(MONGODB_URI!, {
       dbName: MONGODB_DB,
@@ -58,7 +63,11 @@ async function connectDB() {
       socketTimeoutMS: 45000,
     });
 
-    console.log('✅ Connected to MongoDB');
+    const dbName = mongoose.connection.db?.databaseName || 'unknown';
+    console.log(`✅ Connected to MongoDB`);
+    console.log(`   Active database: ${dbName}`);
+    console.log(`   Collections: ${(await mongoose.connection.db?.listCollections().toArray())?.map((c: any) => c.name).join(', ') || 'none'}`);
+    
     return mongoose.connection;
   } catch (error) {
     console.error('❌ MongoDB connection error:', error);
