@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/db';
 import BotSettings from '@/lib/models/BotSettings';
 import { invalidateBotSettingsCache } from '@/lib/services/telegramService';
+import { invalidateKnowledgeBaseCache } from '@/lib/services/chatService';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request: NextRequest) {
@@ -74,17 +75,19 @@ export async function POST(request: NextRequest) {
       scrapedAt: new Date()
     };
 
-    // Add URL to bot settings
+    // Add URL to bot settings and update updatedAt
     await BotSettings.findOneAndUpdate(
       { botId },
       { 
         $push: { urls: urlSource },
-        $addToSet: { categories: category || 'General' }
+        $addToSet: { categories: category || 'General' },
+        $set: { updatedAt: new Date() } // Force update updatedAt to invalidate cache
       }
     );
 
-    // Invalidate cache when settings are updated
+    // Invalidate all caches when settings are updated
     invalidateBotSettingsCache(botId);
+    invalidateKnowledgeBaseCache(botId);
 
     return NextResponse.json({ 
       success: true, 
@@ -119,14 +122,18 @@ export async function DELETE(request: NextRequest) {
 
     await connectDB();
 
-    // Remove URL from bot settings
+    // Remove URL from bot settings and update updatedAt
     await BotSettings.findOneAndUpdate(
       { botId },
-      { $pull: { urls: { id: urlId } } }
+      { 
+        $pull: { urls: { id: urlId } },
+        $set: { updatedAt: new Date() } // Force update updatedAt to invalidate cache
+      }
     );
 
-    // Invalidate cache when settings are updated
+    // Invalidate all caches when settings are updated
     invalidateBotSettingsCache(botId);
+    invalidateKnowledgeBaseCache(botId);
 
     return NextResponse.json({ success: true });
 
@@ -159,7 +166,7 @@ export async function PUT(request: NextRequest) {
     await connectDB();
 
     // Update URL settings
-    const updateData: any = {};
+    const updateData: any = { updatedAt: new Date() }; // Force update updatedAt to invalidate cache
     if (enabled !== undefined) updateData['urls.$.enabled'] = enabled;
     if (category !== undefined) updateData['urls.$.category'] = category;
     if (tags !== undefined) updateData['urls.$.tags'] = tags;
@@ -169,8 +176,9 @@ export async function PUT(request: NextRequest) {
       { $set: updateData }
     );
 
-    // Invalidate cache when settings are updated
+    // Invalidate all caches when settings are updated
     invalidateBotSettingsCache(botId);
+    invalidateKnowledgeBaseCache(botId);
 
     return NextResponse.json({ success: true });
 

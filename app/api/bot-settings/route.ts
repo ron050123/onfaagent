@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/db';
 import BotSettings from '@/lib/models/BotSettings';
 import { invalidateBotSettingsCache } from '@/lib/services/telegramService';
+import { invalidateKnowledgeBaseCache } from '@/lib/services/chatService';
 
 export async function GET(request: NextRequest) {
   try {
@@ -108,8 +109,9 @@ export async function POST(request: NextRequest) {
       botSettings = await BotSettings.findOne({ botId });
     }
 
-    // Invalidate cache when settings are updated
+    // Invalidate all caches when settings are updated
     invalidateBotSettingsCache(botId);
+    invalidateKnowledgeBaseCache(botId);
 
     return NextResponse.json(botSettings);
 

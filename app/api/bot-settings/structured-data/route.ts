@@ -4,6 +4,7 @@ import { authOptions } from '@/lib/auth';
 import connectDB from '@/lib/db';
 import BotSettings from '@/lib/models/BotSettings';
 import { invalidateBotSettingsCache } from '@/lib/services/telegramService';
+import { invalidateKnowledgeBaseCache } from '@/lib/services/chatService';
 import { v4 as uuidv4 } from 'uuid';
 
 export async function POST(request: NextRequest) {
@@ -55,17 +56,19 @@ export async function POST(request: NextRequest) {
       createdAt: new Date()
     };
 
-    // Add structured data to bot settings
+    // Add structured data to bot settings and update updatedAt
     await BotSettings.findOneAndUpdate(
       { botId },
       { 
         $push: { structuredData: structuredDataSource },
-        $addToSet: { categories: category || 'General' }
+        $addToSet: { categories: category || 'General' },
+        $set: { updatedAt: new Date() } // Force update updatedAt to invalidate cache
       }
     );
 
-    // Invalidate cache when settings are updated
+    // Invalidate all caches when settings are updated
     invalidateBotSettingsCache(botId);
+    invalidateKnowledgeBaseCache(botId);
 
     return NextResponse.json({ 
       success: true, 
@@ -100,14 +103,18 @@ export async function DELETE(request: NextRequest) {
 
     await connectDB();
 
-    // Remove structured data from bot settings
+    // Remove structured data from bot settings and update updatedAt
     await BotSettings.findOneAndUpdate(
       { botId },
-      { $pull: { structuredData: { id: dataId } } }
+      { 
+        $pull: { structuredData: { id: dataId } },
+        $set: { updatedAt: new Date() } // Force update updatedAt to invalidate cache
+      }
     );
 
-    // Invalidate cache when settings are updated
+    // Invalidate all caches when settings are updated
     invalidateBotSettingsCache(botId);
+    invalidateKnowledgeBaseCache(botId);
 
     return NextResponse.json({ success: true });
 
@@ -140,7 +147,7 @@ export async function PUT(request: NextRequest) {
     await connectDB();
 
     // Update structured data settings
-    const updateData: any = {};
+    const updateData: any = { updatedAt: new Date() }; // Force update updatedAt to invalidate cache
     if (enabled !== undefined) updateData['structuredData.$.enabled'] = enabled;
     if (category !== undefined) updateData['structuredData.$.category'] = category;
     if (tags !== undefined) updateData['structuredData.$.tags'] = tags;
@@ -151,8 +158,9 @@ export async function PUT(request: NextRequest) {
       { $set: updateData }
     );
 
-    // Invalidate cache when settings are updated
+    // Invalidate all caches when settings are updated
     invalidateBotSettingsCache(botId);
+    invalidateKnowledgeBaseCache(botId);
 
     return NextResponse.json({ success: true });
 

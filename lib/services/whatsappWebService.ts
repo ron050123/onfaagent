@@ -288,11 +288,25 @@ async function handleWhatsAppWebMessage(botId: string, msg: any) {
   
   if (cached && Date.now() - cached.timestamp < BOT_SETTINGS_CACHE_TTL) {
     botSettings = cached.settings;
+    console.log(`[WHATSAPP] Using cached bot settings for: ${botId}`);
   } else {
     botSettings = await BotSettings.findOne({ botId }).select('botId name userId welcomeMessage faqs documents urls structuredData updatedAt').lean() as any;
     if (botSettings) {
       botSettingsCache.set(cacheKey, { settings: botSettings, timestamp: Date.now() });
+      console.log(`[WHATSAPP] Loaded bot settings from database for: ${botId}`);
+    } else {
+      console.error(`[WHATSAPP] Bot settings not found for bot: ${botId}`);
     }
+  }
+  
+  // Debug: Log botSettings structure
+  if (botSettings) {
+    console.log(`[WHATSAPP] Bot settings check:`);
+    console.log(`[WHATSAPP]   Bot ID: ${botSettings.botId}`);
+    console.log(`[WHATSAPP]   FAQs count: ${botSettings.faqs?.length || 0}`);
+    console.log(`[WHATSAPP]   Documents count: ${botSettings.documents?.filter((d: any) => d.enabled)?.length || 0}`);
+    console.log(`[WHATSAPP]   URLs count: ${botSettings.urls?.filter((u: any) => u.enabled)?.length || 0}`);
+    console.log(`[WHATSAPP]   Structured data count: ${botSettings.structuredData?.filter((s: any) => s.enabled)?.length || 0}`);
   }
 
   if (!botSettings) {
@@ -346,7 +360,7 @@ async function handleWhatsAppWebMessage(botId: string, msg: any) {
       'whatsapp'
     );
 
-    console.log(`✅ AI reply generated: "${reply.substring(0, 50)}..."`);
+    console.log(`[WHATSAPP] ✅ AI reply generated: "${reply.substring(0, 100)}..."`);
 
     // Send reply
     await sendWhatsAppWebMessage(botId, from, reply);

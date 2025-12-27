@@ -10,6 +10,36 @@ const CACHE_TTL = 10 * 60 * 1000; // 10 minutes cache - increased for better per
 const systemPromptCache = new Map<string, { prompt: string; timestamp: number }>();
 const PROMPT_CACHE_TTL = 10 * 60 * 1000; // 10 minutes
 
+/**
+ * Invalidate knowledge base and system prompt caches for a bot
+ * Call this when bot settings are updated (documents, URLs, FAQs, etc.)
+ */
+export function invalidateKnowledgeBaseCache(botId: string): void {
+  // Clear all cache entries that match this botId
+  const keysToDelete: string[] = [];
+  
+  // Clear knowledge base cache
+  for (const key of knowledgeBaseCache.keys()) {
+    if (key.startsWith(`${botId}_`)) {
+      keysToDelete.push(key);
+    }
+  }
+  keysToDelete.forEach(key => knowledgeBaseCache.delete(key));
+  
+  // Clear system prompt cache
+  const promptKeysToDelete: string[] = [];
+  for (const key of systemPromptCache.keys()) {
+    if (key.startsWith(`${botId}_`)) {
+      promptKeysToDelete.push(key);
+    }
+  }
+  promptKeysToDelete.forEach(key => systemPromptCache.delete(key));
+  
+  if (keysToDelete.length > 0 || promptKeysToDelete.length > 0) {
+    console.log(`🗑️ Invalidated knowledge base cache for bot: ${botId} (${keysToDelete.length} KB entries, ${promptKeysToDelete.length} prompt entries)`);
+  }
+}
+
 // Cache for bot settings to reduce database queries
 const botSettingsCache = new Map<string, { settings: IBotSettings; timestamp: number }>();
 const BOT_SETTINGS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
@@ -194,13 +224,15 @@ export function generateSystemPrompt(botSettings: IBotSettings, platform?: strin
   // Build knowledge base with optional length limit
   const knowledgeBase = buildKnowledgeBase(botSettings, maxKbLength);
   
-  // Debug logging for knowledge base
-  console.log(`📚 Knowledge base built:`);
-  console.log(`   Length: ${knowledgeBase.length} chars`);
-  console.log(`   Preview: ${knowledgeBase.substring(0, 200)}...`);
-  console.log(`   Has FAQs: ${knowledgeBase.includes('FAQs:')}`);
-  console.log(`   Has Documents: ${knowledgeBase.includes('Document Knowledge Base:')}`);
-  console.log(`   Has URLs: ${knowledgeBase.includes('Web Content Knowledge Base:')}`);
+  // Debug logging for knowledge base with platform context
+  const platformTag = platform ? `[${platform.toUpperCase()}]` : '';
+  console.log(`${platformTag} 📚 Knowledge base built:`);
+  console.log(`${platformTag}    Length: ${knowledgeBase.length} chars`);
+  console.log(`${platformTag}    Preview: ${knowledgeBase.substring(0, 200)}...`);
+  console.log(`${platformTag}    Has FAQs: ${knowledgeBase.includes('FAQs:')}`);
+  console.log(`${platformTag}    Has Documents: ${knowledgeBase.includes('Document Knowledge Base:')}`);
+  console.log(`${platformTag}    Has URLs: ${knowledgeBase.includes('Web Content Knowledge Base:')}`);
+  console.log(`${platformTag}    Has Structured Data: ${knowledgeBase.includes('Structured Data Knowledge Base:')}`);
   
   const platformContext = platform === 'telegram' 
     ? 'Provide informative answers with key details. Balance between being comprehensive and concise.'
@@ -227,8 +259,8 @@ Instructions:
 - For Telegram/WhatsApp: Provide informative answers (3-6 sentences) with key details
 - ${platformContext}`;
   
-  // Debug: Log prompt length
-  console.log(`📝 System prompt length: ${prompt.length} chars`);
+  // Debug: Log prompt length with platform context
+  console.log(`${platformTag} 📝 System prompt length: ${prompt.length} chars`);
 
   // Cache the result
   systemPromptCache.set(cacheKey, {
@@ -301,8 +333,8 @@ export async function processChatMessage(
 
   // Try with optimized knowledge base first
   try {
-    // Use larger knowledge base for Telegram to include more documents (max 20000 chars)
-    const maxKbLength = platform === 'telegram' ? 20000 : undefined;
+    // Use larger knowledge base for Telegram and WhatsApp to include more documents (max 20000 chars)
+    const maxKbLength = (platform === 'telegram' || platform === 'whatsapp') ? 20000 : undefined;
     const systemPrompt = generateSystemPrompt(botSettings, platform, maxKbLength);
     
     const completion = await Promise.race([
@@ -326,7 +358,8 @@ export async function processChatMessage(
     ]);
 
     const elapsed = Date.now() - startTime;
-    console.log(`✅ OpenAI API response received in ${elapsed}ms`);
+    const platformTag = platform ? `[${platform.toUpperCase()}]` : '';
+    console.log(`${platformTag} ✅ OpenAI API response received in ${elapsed}ms`);
     return completion.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
   } catch (error: any) {
     // If timeout and prompt is too long, try with shorter knowledge base

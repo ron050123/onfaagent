@@ -158,6 +158,14 @@ async function handleMessage(client: Client, botSettings: any, msg: any) {
   try {
     console.log(`🤖 Processing message with AI: "${text}"`);
     
+    // Debug: Log botSettings structure
+    console.log(`[WHATSAPP] Bot settings check:`);
+    console.log(`[WHATSAPP]   Bot ID: ${botSettings.botId}`);
+    console.log(`[WHATSAPP]   FAQs count: ${botSettings.faqs?.length || 0}`);
+    console.log(`[WHATSAPP]   Documents count: ${botSettings.documents?.filter((d: any) => d.enabled)?.length || 0}`);
+    console.log(`[WHATSAPP]   URLs count: ${botSettings.urls?.filter((u: any) => u.enabled)?.length || 0}`);
+    console.log(`[WHATSAPP]   Structured data count: ${botSettings.structuredData?.filter((s: any) => s.enabled)?.length || 0}`);
+    
     const reply = await processChatMessage(
       botSettings,
       text,
