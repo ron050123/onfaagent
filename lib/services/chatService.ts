@@ -203,12 +203,12 @@ export function generateSystemPrompt(botSettings: IBotSettings, platform?: strin
   console.log(`   Has URLs: ${knowledgeBase.includes('Web Content Knowledge Base:')}`);
   
   const platformContext = platform === 'telegram' 
-    ? 'Provide detailed and complete answers based on the knowledge base. Include all relevant information from documents, FAQs, and other sources.'
+    ? 'Keep answers concise and focused. Provide key information clearly but avoid unnecessary details.'
     : platform === 'facebook' || platform === 'zalo'
     ? 'Be friendly and engaging.'
     : '';
 
-  // Enhanced prompt structure for comprehensive responses
+  // Enhanced prompt structure for balanced responses
   const prompt = `You are ${botSettings.name}, a helpful and knowledgeable chatbot.
 
 Knowledge Base:
@@ -216,12 +216,13 @@ ${knowledgeBase}
 
 Instructions:
 - Answer questions based EXACTLY on the knowledge base above
-- Provide COMPLETE and DETAILED answers with all relevant information
-- Include specific details, examples, and explanations from the knowledge base
-- If the knowledge base contains information about the topic, provide a thorough answer
+- Provide clear, concise answers with key information (30-40% shorter than verbose explanations)
+- Focus on the most important points from the knowledge base
+- Be direct and to the point while still being helpful
+- If the knowledge base contains information about the topic, provide a focused answer
 - Only say "I don't have that information" if the knowledge base truly doesn't contain relevant information
 - Be helpful, friendly, and professional
-- For Telegram: Provide detailed answers but organize them clearly
+- For Telegram: Keep responses concise (2-4 sentences) but informative
 - ${platformContext}`;
   
   // Debug: Log prompt length
@@ -309,7 +310,7 @@ export async function processChatMessage(
           { role: 'system', content: systemPrompt },
           { role: 'user', content: message }
         ],
-        max_tokens: 1000, // Increased for detailed responses
+        max_tokens: 400, // Balanced length - detailed but concise
         temperature: 0.7,
         stream: false,
         top_p: 0.9,
@@ -341,7 +342,7 @@ export async function processChatMessage(
               { role: 'system', content: reducedPrompt },
               { role: 'user', content: message }
             ],
-            max_tokens: 800, // Still allow detailed responses
+            max_tokens: 350, // Concise fallback responses
             temperature: 0.7,
             stream: false,
             top_p: 0.9,
