@@ -203,6 +203,14 @@ export function generateSystemPrompt(botSettings: IBotSettings, platform?: strin
   // Build knowledge base with optional length limit
   const knowledgeBase = buildKnowledgeBase(botSettings, maxKbLength);
   
+  // Debug logging for knowledge base
+  console.log(`📚 Knowledge base built:`);
+  console.log(`   Length: ${knowledgeBase.length} chars`);
+  console.log(`   Preview: ${knowledgeBase.substring(0, 200)}...`);
+  console.log(`   Has FAQs: ${knowledgeBase.includes('FAQs:')}`);
+  console.log(`   Has Documents: ${knowledgeBase.includes('Document Knowledge Base:')}`);
+  console.log(`   Has URLs: ${knowledgeBase.includes('Web Content Knowledge Base:')}`);
+  
   const platformContext = platform === 'telegram' 
     ? 'Keep responses concise for mobile.'
     : platform === 'facebook' || platform === 'zalo'
@@ -221,6 +229,9 @@ Rules:
 - If unsure, say "I don't have that information. Please contact support."
 - Keep responses relevant and concise (max 2-3 sentences for Telegram)
 - ${platformContext}`;
+  
+  // Debug: Log prompt length
+  console.log(`📝 System prompt length: ${prompt.length} chars`);
 
   // Cache the result
   systemPromptCache.set(cacheKey, {

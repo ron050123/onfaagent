@@ -232,6 +232,15 @@ async function handleMessage(bot: TelegramBot, botSettings: any, message: Telegr
     // Process with AI
     console.log(`🤖 Processing message with AI: "${text}"`);
     
+    // Debug: Check bot settings data
+    console.log(`📋 Bot settings check:`);
+    console.log(`   Bot ID: ${botSettings.botId}`);
+    console.log(`   Bot Name: ${botSettings.name}`);
+    console.log(`   FAQs count: ${botSettings.faqs?.length || 0}`);
+    console.log(`   Documents count: ${botSettings.documents?.filter((d: any) => d.enabled)?.length || 0}`);
+    console.log(`   URLs count: ${botSettings.urls?.filter((u: any) => u.enabled)?.length || 0}`);
+    console.log(`   Structured data count: ${botSettings.structuredData?.filter((s: any) => s.enabled)?.length || 0}`);
+    
     const reply = await processChatMessage(
       botSettings,
       text,
@@ -240,7 +249,7 @@ async function handleMessage(bot: TelegramBot, botSettings: any, message: Telegr
     );
 
     clearInterval(typingInterval);
-    console.log(`✅ AI reply generated: "${reply.substring(0, 50)}..."`);
+    console.log(`✅ AI reply generated: "${reply.substring(0, 100)}..."`);
 
     // Send reply
     await sendMessage(bot, chatId, reply);
