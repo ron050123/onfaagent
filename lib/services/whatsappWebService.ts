@@ -242,12 +242,19 @@ export async function sendWhatsAppWebMessage(
   }
 
   try {
-    // Format phone number (remove + and ensure it's international format)
-    const phoneNumber = to.replace(/[^0-9]/g, '');
-    const chatId = `${phoneNumber}@c.us`;
+    // Handle both @c.us and @lid formats
+    let chatId: string;
+    if (to.includes('@')) {
+      // Already has format like 84922156755@c.us or 206206329217189@lid
+      chatId = to;
+    } else {
+      // Just phone number, add @c.us
+      const phoneNumber = to.replace(/[^0-9]/g, '');
+      chatId = `${phoneNumber}@c.us`;
+    }
 
     await client.sendMessage(chatId, message);
-    console.log(`✅ WhatsApp Web message sent to ${to}`);
+    console.log(`✅ WhatsApp Web message sent to ${chatId}`);
     return true;
   } catch (error: any) {
     console.error(`❌ Error sending WhatsApp Web message:`, error);
@@ -260,12 +267,13 @@ export async function sendWhatsAppWebMessage(
  */
 async function handleWhatsAppWebMessage(botId: string, msg: any) {
   // Ignore status messages and group messages
-  // Group chat IDs end with @g.us, personal chats end with @c.us
+  // Group chat IDs end with @g.us, personal chats end with @c.us or @lid
   if (msg.from === 'status@broadcast' || msg.from.endsWith('@g.us')) {
     return;
   }
 
-  const from = msg.from.replace('@c.us', '');
+  // Keep original from format (@lid or @c.us) - don't replace it
+  const from = msg.from;
   const text = msg.body || '';
   const messageId = (msg.id as any)?._serialized || msg.id?.toString() || '';
 
@@ -294,7 +302,7 @@ async function handleWhatsAppWebMessage(botId: string, msg: any) {
 
   // Handle welcome message
   const lowerText = text.toLowerCase().trim();
-  if (lowerText === '/start' || lowerText === 'start' || lowerText === 'hi' || lowerText === 'hello' || lowerText === 'xin chào') {
+  if (lowerText === '/start' || lowerText === 'start' || lowerText === 'hi' || lowerText === 'hello' || lowerText === 'xin chào' || lowerText === 'lô') {
     try {
       await sendWhatsAppWebMessage(
         botId,

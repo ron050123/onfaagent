@@ -100,10 +100,19 @@ async function getBotSettings(botId: string): Promise<any | null> {
  */
 async function sendMessage(client: Client, to: string, message: string): Promise<void> {
   try {
-    const phoneNumber = to.replace(/[^0-9]/g, '');
-    const chatId = `${phoneNumber}@c.us`;
+    // Handle both @c.us and @lid formats
+    let chatId: string;
+    if (to.includes('@')) {
+      // Already has format like 84922156755@c.us or 206206329217189@lid
+      chatId = to;
+    } else {
+      // Just phone number, add @c.us
+      const phoneNumber = to.replace(/[^0-9]/g, '');
+      chatId = `${phoneNumber}@c.us`;
+    }
+    
     await client.sendMessage(chatId, message);
-    console.log(`✅ Message sent to ${to}`);
+    console.log(`✅ Message sent to ${chatId}`);
   } catch (error: any) {
     console.error(`❌ Error sending message:`, error);
     throw error;
@@ -115,23 +124,24 @@ async function sendMessage(client: Client, to: string, message: string): Promise
  */
 async function handleMessage(client: Client, botSettings: any, msg: any) {
   // Ignore status messages and group messages
-  // Group chat IDs end with @g.us, personal chats end with @c.us
+  // Group chat IDs end with @g.us, personal chats end with @c.us or @lid
   if (msg.from === 'status@broadcast' || msg.from.endsWith('@g.us')) {
     return;
   }
 
-  const from = msg.from.replace('@c.us', '');
+  // Keep original from format (@lid or @c.us) - don't replace it
+  const from = msg.from;
   const text = msg.body || '';
 
   console.log(`📨 WhatsApp Web message: from=${from}, text="${text.substring(0, 50)}..."`);
 
   // Handle welcome message
   const lowerText = text.toLowerCase().trim();
-  if (lowerText === '/start' || lowerText === 'start' || lowerText === 'hi' || lowerText === 'hello' || lowerText === 'xin chào') {
+  if (lowerText === '/start' || lowerText === 'start' || lowerText === 'hi' || lowerText === 'hello' || lowerText === 'xin chào' || lowerText === 'lô') {
     try {
       await sendMessage(
         client,
-        from,
+        from, // Use original format with @lid or @c.us
         botSettings.welcomeMessage || `Xin chào! Tôi là ${botSettings.name}. Tôi có thể giúp gì cho bạn?`
       );
     } catch (error) {
