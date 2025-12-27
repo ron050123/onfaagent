@@ -203,7 +203,7 @@ export function generateSystemPrompt(botSettings: IBotSettings, platform?: strin
   console.log(`   Has URLs: ${knowledgeBase.includes('Web Content Knowledge Base:')}`);
   
   const platformContext = platform === 'telegram' 
-    ? 'Keep answers concise and focused. Provide key information clearly but avoid unnecessary details.'
+    ? 'Provide informative answers with key details. Balance between being comprehensive and concise.'
     : platform === 'facebook' || platform === 'zalo'
     ? 'Be friendly and engaging.'
     : '';
@@ -216,13 +216,13 @@ ${knowledgeBase}
 
 Instructions:
 - Answer questions based EXACTLY on the knowledge base above
-- Provide clear, concise answers with key information (30-40% shorter than verbose explanations)
-- Focus on the most important points from the knowledge base
-- Be direct and to the point while still being helpful
-- If the knowledge base contains information about the topic, provide a focused answer
+- Provide informative answers with key details and relevant information
+- Include important points from the knowledge base but keep it well-organized
+- Be helpful and thorough while avoiding unnecessary verbosity
+- If the knowledge base contains information about the topic, provide a complete answer
 - Only say "I don't have that information" if the knowledge base truly doesn't contain relevant information
 - Be helpful, friendly, and professional
-- For Telegram: Keep responses concise (2-4 sentences) but informative
+- For Telegram: Provide informative answers (3-6 sentences) with key details
 - ${platformContext}`;
   
   // Debug: Log prompt length
@@ -310,7 +310,7 @@ export async function processChatMessage(
           { role: 'system', content: systemPrompt },
           { role: 'user', content: message }
         ],
-        max_tokens: 400, // Balanced length - detailed but concise
+        max_tokens: 600, // Balanced length - informative but not too verbose
         temperature: 0.7,
         stream: false,
         top_p: 0.9,
@@ -342,7 +342,7 @@ export async function processChatMessage(
               { role: 'system', content: reducedPrompt },
               { role: 'user', content: message }
             ],
-            max_tokens: 350, // Concise fallback responses
+            max_tokens: 500, // Balanced fallback responses
             temperature: 0.7,
             stream: false,
             top_p: 0.9,
