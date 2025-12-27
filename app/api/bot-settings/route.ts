@@ -48,7 +48,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { botId, name, welcomeMessage, themeColor, faqs, documents, urls, structuredData, categories } = await request.json();
+    const { botId, name, welcomeMessage, themeColor, faqs, documents, urls, structuredData, categories, whatsapp } = await request.json();
 
     if (!botId) {
       return NextResponse.json(
@@ -59,25 +59,54 @@ export async function POST(request: NextRequest) {
 
     await connectDB();
 
-    // Upsert bot settings - use $set to preserve telegram settings
-    const botSettings = await BotSettings.findOneAndUpdate(
+    // Build base update data
+    const updateData: any = {
+      botId,
+      name: name || 'AI Assistant',
+      welcomeMessage: welcomeMessage || 'Hello! How can I help you today?',
+      themeColor: themeColor || '#3B82F6',
+      faqs: faqs || [],
+      documents: documents || [],
+      urls: urls || [],
+      structuredData: structuredData || [],
+      categories: categories || []
+      // Note: telegram and messenger fields are NOT included here to preserve existing settings
+    };
+
+    // Upsert bot settings first
+    let botSettings = await BotSettings.findOneAndUpdate(
       { botId },
-      {
-        $set: {
-          botId,
-          name: name || 'AI Assistant',
-          welcomeMessage: welcomeMessage || 'Hello! How can I help you today?',
-          themeColor: themeColor || '#3B82F6',
-          faqs: faqs || [],
-          documents: documents || [],
-          urls: urls || [],
-          structuredData: structuredData || [],
-          categories: categories || []
-          // Note: telegram field is NOT included here to preserve existing telegram settings
-        }
-      },
+      { $set: updateData },
       { upsert: true, new: true }
     );
+
+    // If whatsapp field is provided, update it separately to preserve existing whatsapp settings
+    if (whatsapp !== undefined) {
+      // Get existing whatsapp settings
+      const existingBot = await BotSettings.findOne({ botId }).lean() as any;
+      const existingWhatsapp = existingBot?.whatsapp || {};
+      
+      // Merge existing whatsapp settings with new ones
+      const updatedWhatsapp = { ...existingWhatsapp, ...whatsapp };
+      
+      // Use MongoDB native update for nested whatsapp field
+      const mongooseConnection = await connectDB();
+      if (mongooseConnection?.connection?.db) {
+        const db = mongooseConnection.connection.db;
+        const collection = db.collection(BotSettings.collection.name);
+        
+        await collection.updateOne(
+          { botId },
+          { $set: { 'whatsapp': updatedWhatsapp } }
+        );
+        
+        console.log(`✅ WhatsApp settings updated for bot: ${botId}`);
+        console.log(`   Updated whatsapp:`, JSON.stringify(updatedWhatsapp, null, 2));
+      }
+      
+      // Reload bot to get updated whatsapp settings
+      botSettings = await BotSettings.findOne({ botId });
+    }
 
     // Invalidate cache when settings are updated
     invalidateBotSettingsCache(botId);
