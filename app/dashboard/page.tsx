@@ -63,6 +63,18 @@ interface MessengerSettings {
   webhookSetAt?: string
 }
 
+interface WhatsAppSettings {
+  enabled?: boolean
+  accessToken?: string
+  phoneNumberId?: string
+  businessAccountId?: string
+  verifyToken?: string
+  webhookUrl?: string
+  webhookSetAt?: string
+  phoneNumber?: string
+  verifiedName?: string
+}
+
 interface BotSettings {
   _id?: string
   botId: string
@@ -76,6 +88,7 @@ interface BotSettings {
   categories: string[]
   telegram?: TelegramSettings
   messenger?: MessengerSettings
+  whatsapp?: WhatsAppSettings
   createdAt?: string
 }
 
@@ -98,7 +111,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [copiedBotId, setCopiedBotId] = useState<string | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
-  const [activeTab, setActiveTab] = useState<'faq' | 'documents' | 'urls' | 'structured' | 'telegram' | 'messenger'>('faq')
+  const [activeTab, setActiveTab] = useState<'faq' | 'documents' | 'urls' | 'structured' | 'telegram' | 'messenger' | 'whatsapp'>('faq')
   const [newUrl, setNewUrl] = useState('')
   const [newUrlCategory, setNewUrlCategory] = useState('')
   const [newUrlTags, setNewUrlTags] = useState('')
@@ -177,6 +190,11 @@ export default function DashboardPage() {
   const [messengerPageInfo, setMessengerPageInfo] = useState<any>(null)
   const [showMessengerCustomWebhook, setShowMessengerCustomWebhook] = useState(false)
   const [showCustomWebhook, setShowCustomWebhook] = useState(false)
+  
+  // WhatsApp Web state
+  const [whatsappLoading, setWhatsappLoading] = useState(false)
+  const [whatsappQRCode, setWhatsappQRCode] = useState<string | null>(null)
+  const [whatsappStatus, setWhatsappStatus] = useState<any>(null)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -359,6 +377,8 @@ export default function DashboardPage() {
     setMessengerAppSecret(bot.messenger?.appSecret || '')
     setMessengerWebhookUrl('')
     setMessengerPageInfo(null)
+    setWhatsappQRCode(null)
+    setWhatsappStatus(null)
     loadAnalytics(bot.botId)
     
     // Load full bot data from API to ensure we have latest settings
@@ -1027,6 +1047,158 @@ export default function DashboardPage() {
     }
   }
 
+  // WhatsApp Web functions
+  const handleGetWhatsAppQRCode = async () => {
+    if (!selectedBot) return
+
+    setWhatsappLoading(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    try {
+      const response = await fetch(`/api/whatsapp-web/qr-code?botId=${selectedBot.botId}`)
+      const data = await response.json()
+
+      if (response.ok && data.qrCode) {
+        setWhatsappQRCode(data.qrCode)
+        setSuccessMessage('QR code đã được tạo! Quét QR code bằng WhatsApp để đăng nhập.')
+        setTimeout(() => setSuccessMessage(''), 5000)
+      } else if (data.authenticated) {
+        setWhatsappStatus(data)
+        setSuccessMessage('WhatsApp Web đã được kết nối!')
+        setTimeout(() => setSuccessMessage(''), 3000)
+      } else {
+        setErrorMessage(data.error || 'Không thể tạo QR code')
+        setTimeout(() => setErrorMessage(''), 5000)
+      }
+    } catch (error) {
+      setErrorMessage('Lỗi kết nối. Vui lòng thử lại.')
+      setTimeout(() => setErrorMessage(''), 5000)
+    } finally {
+      setWhatsappLoading(false)
+    }
+  }
+
+  const handleGetWhatsAppStatus = async () => {
+    if (!selectedBot) return
+
+    setWhatsappLoading(true)
+    setErrorMessage('')
+
+    try {
+      const response = await fetch(`/api/whatsapp-web/status?botId=${selectedBot.botId}`)
+      const data = await response.json()
+
+      if (response.ok) {
+        setWhatsappStatus(data)
+        if (data.authenticated) {
+          setSuccessMessage('WhatsApp Web đã được kết nối!')
+          setTimeout(() => setSuccessMessage(''), 3000)
+        }
+      } else {
+        setErrorMessage(data.error || 'Không thể lấy trạng thái')
+        setTimeout(() => setErrorMessage(''), 5000)
+      }
+    } catch (error) {
+      setErrorMessage('Lỗi kết nối. Vui lòng thử lại.')
+      setTimeout(() => setErrorMessage(''), 5000)
+    } finally {
+      setWhatsappLoading(false)
+    }
+  }
+
+  const handleEnableWhatsAppWeb = async () => {
+    if (!selectedBot) return
+
+    setWhatsappLoading(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    try {
+      // First, initialize client to get QR code
+      await handleGetWhatsAppQRCode()
+      
+      // Then update bot settings to enable WhatsApp
+      const response = await fetch('/api/bot-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          botId: selectedBot.botId,
+          whatsapp: {
+            enabled: true
+          }
+        })
+      })
+
+      if (response.ok) {
+        const updatedBot = await response.json()
+        setSelectedBot(updatedBot)
+        setAllBots(prev => prev.map(bot => bot.botId === selectedBot.botId ? updatedBot : bot))
+        setSuccessMessage('WhatsApp Web bot đã được kích hoạt! Quét QR code để đăng nhập.')
+        setTimeout(() => setSuccessMessage(''), 5000)
+      } else {
+        const error = await response.json()
+        setErrorMessage(error.error || 'Không thể kích hoạt WhatsApp Web bot')
+        setTimeout(() => setErrorMessage(''), 5000)
+      }
+    } catch (error) {
+      setErrorMessage('Lỗi kết nối. Vui lòng thử lại.')
+      setTimeout(() => setErrorMessage(''), 5000)
+    } finally {
+      setWhatsappLoading(false)
+    }
+  }
+
+  const handleDisableWhatsAppWeb = async () => {
+    if (!selectedBot) return
+
+    setWhatsappLoading(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    try {
+      const response = await fetch('/api/whatsapp-web/logout', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({ botId: selectedBot.botId })
+      })
+
+      if (response.ok) {
+        // Also update bot settings
+        const updateResponse = await fetch('/api/bot-settings', {
+          method: 'POST',
+          headers: { 'Content-Type': 'application/json' },
+          body: JSON.stringify({
+            botId: selectedBot.botId,
+            whatsapp: {
+              enabled: false
+            }
+          })
+        })
+
+        if (updateResponse.ok) {
+          const updatedBot = await updateResponse.json()
+          setSelectedBot(updatedBot)
+          setAllBots(prev => prev.map(bot => bot.botId === selectedBot.botId ? updatedBot : bot))
+        }
+
+        setWhatsappQRCode(null)
+        setWhatsappStatus(null)
+        setSuccessMessage('Đã vô hiệu hóa WhatsApp Web bot thành công!')
+        setTimeout(() => setSuccessMessage(''), 3000)
+      } else {
+        const error = await response.json()
+        setErrorMessage(error.error || 'Không thể vô hiệu hóa WhatsApp Web bot')
+        setTimeout(() => setErrorMessage(''), 5000)
+      }
+    } catch (error) {
+      setErrorMessage('Lỗi kết nối. Vui lòng thử lại.')
+      setTimeout(() => setErrorMessage(''), 5000)
+    } finally {
+      setWhatsappLoading(false)
+    }
+  }
+
   if (status === 'loading') {
     return <div className="min-h-screen flex items-center justify-center">Loading...</div>
   }
@@ -1455,7 +1627,8 @@ export default function DashboardPage() {
                           { id: 'urls', name: 'Web', fullName: 'Nội dung Web', icon: Plus },
                           { id: 'structured', name: 'Dữ liệu', fullName: 'Dữ liệu cấu trúc', icon: BarChart3 },
                           { id: 'telegram', name: 'Telegram', fullName: 'Telegram Bot', icon: Send },
-                          { id: 'messenger', name: 'Messenger', fullName: 'Messenger Bot', icon: MessageCircle }
+                          { id: 'messenger', name: 'Messenger', fullName: 'Messenger Bot', icon: MessageCircle },
+                          { id: 'whatsapp', name: 'WhatsApp', fullName: 'WhatsApp Web Bot', icon: MessageSquare }
                         ].map((tab) => {
                           const Icon = tab.icon
                           return (
@@ -2182,6 +2355,156 @@ export default function DashboardPage() {
                                 </>
                               )}
                             </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* WhatsApp Web Tab */}
+                    {activeTab === 'whatsapp' && (
+                      <div className="space-y-6">
+                        <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                          <div className="flex items-start">
+                            <div className="w-5 h-5 bg-green-500 rounded-full flex items-center justify-center mr-3 mt-0.5">
+                              <span className="text-white text-xs font-bold">i</span>
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-green-900 mb-2">Hướng dẫn tích hợp WhatsApp Web Bot</h4>
+                              <div className="text-sm text-green-800 space-y-2">
+                                <p><strong>1. Kích hoạt WhatsApp Web Bot:</strong> Nhấn nút "Kích hoạt WhatsApp Web Bot" bên dưới</p>
+                                <p><strong>2. Quét QR Code:</strong> Sau khi kích hoạt, QR code sẽ hiển thị. Mở WhatsApp trên điện thoại → Settings → Linked Devices → Link a Device</p>
+                                <p><strong>3. Quét QR Code:</strong> Quét QR code trên màn hình để đăng nhập</p>
+                                <p><strong>4. Đợi xác thực:</strong> Sau khi quét, đợi vài giây để hệ thống xác thực</p>
+                                <p><strong>5. Kiểm tra trạng thái:</strong> Nhấn "Kiểm tra trạng thái" để xem bot đã kết nối chưa</p>
+                                <p className="text-green-600 font-medium">✨ Bot sẽ tự động trả lời tin nhắn dựa trên FAQs và knowledge base của bạn!</p>
+                                <p className="text-yellow-700 font-medium">⚠️ Lưu ý: Giải pháp này sử dụng WhatsApp Web.js (không chính thức). Chỉ nên dùng cho testing/personal use.</p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Error/Success Messages */}
+                        {errorMessage && (
+                          <div className="p-4 bg-red-50 border border-red-200 text-red-800 rounded-md">
+                            <div className="flex items-center">
+                              <div className="text-red-500 text-lg mr-2">⚠️</div>
+                              {errorMessage}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {successMessage && (
+                          <div className="p-4 bg-green-50 border border-green-200 text-green-800 rounded-md">
+                            <div className="flex items-center">
+                              <div className="text-green-500 text-lg mr-2">✅</div>
+                              {successMessage}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* QR Code Display */}
+                        {whatsappQRCode && (
+                          <div className="bg-gray-50 border border-gray-200 rounded-lg p-6">
+                            <h4 className="font-medium text-gray-900 mb-4">QR Code để đăng nhập WhatsApp Web</h4>
+                            <div className="flex justify-center mb-4">
+                              <img src={whatsappQRCode} alt="WhatsApp QR Code" className="max-w-xs border-2 border-gray-300 rounded-lg" />
+                            </div>
+                            <p className="text-sm text-gray-600 text-center">
+                              Quét QR code này bằng WhatsApp trên điện thoại để đăng nhập
+                            </p>
+                          </div>
+                        )}
+
+                        {/* Status Display */}
+                        {whatsappStatus && whatsappStatus.authenticated && (
+                          <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <h4 className="font-medium text-green-900 mb-1">✅ WhatsApp Web đã được kết nối</h4>
+                                <p className="text-sm text-green-700">
+                                  Số điện thoại: <strong>{whatsappStatus.phoneNumber}</strong>
+                                </p>
+                                {whatsappStatus.name && (
+                                  <p className="text-sm text-green-700">
+                                    Tên: <strong>{whatsappStatus.name}</strong>
+                                  </p>
+                                )}
+                              </div>
+                              <Button
+                                onClick={handleDisableWhatsAppWeb}
+                                disabled={whatsappLoading}
+                                variant="outline"
+                                className="text-red-600 border-red-200 hover:bg-red-50"
+                              >
+                                {whatsappLoading ? 'Đang xử lý...' : 'Vô hiệu hóa'}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Current Status */}
+                        {selectedBot?.whatsapp?.enabled && !whatsappStatus && (
+                          <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <h4 className="font-medium text-yellow-900 mb-1">⚠️ WhatsApp Web Bot đã được kích hoạt</h4>
+                                <p className="text-sm text-yellow-700">
+                                  Nhấn "Kiểm tra trạng thái" để xem trạng thái kết nối hiện tại
+                                </p>
+                              </div>
+                              <Button
+                                onClick={handleDisableWhatsAppWeb}
+                                disabled={whatsappLoading}
+                                variant="outline"
+                                className="text-red-600 border-red-200 hover:bg-red-50"
+                              >
+                                {whatsappLoading ? 'Đang xử lý...' : 'Vô hiệu hóa'}
+                              </Button>
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Action Buttons */}
+                        <div className="space-y-3">
+                          {!selectedBot?.whatsapp?.enabled && (
+                            <Button
+                              onClick={handleEnableWhatsAppWeb}
+                              disabled={whatsappLoading}
+                              className="w-full bg-gradient-to-r from-green-600 to-emerald-600 hover:from-green-700 hover:to-emerald-700 text-white"
+                            >
+                              {whatsappLoading ? (
+                                <>
+                                  <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                                  Đang kích hoạt...
+                                </>
+                              ) : (
+                                <>
+                                  <MessageSquare className="w-4 h-4 mr-2" />
+                                  Kích hoạt WhatsApp Web Bot
+                                </>
+                              )}
+                            </Button>
+                          )}
+
+                          {(selectedBot?.whatsapp?.enabled || whatsappQRCode) && (
+                            <>
+                              <Button
+                                onClick={handleGetWhatsAppQRCode}
+                                disabled={whatsappLoading}
+                                variant="outline"
+                                className="w-full"
+                              >
+                                {whatsappLoading ? 'Đang tải...' : 'Lấy QR Code'}
+                              </Button>
+                              <Button
+                                onClick={handleGetWhatsAppStatus}
+                                disabled={whatsappLoading}
+                                variant="outline"
+                                className="w-full"
+                              >
+                                {whatsappLoading ? 'Đang kiểm tra...' : 'Kiểm tra trạng thái'}
+                              </Button>
+                            </>
                           )}
                         </div>
                       </div>

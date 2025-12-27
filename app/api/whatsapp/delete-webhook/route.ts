@@ -34,11 +34,7 @@ export async function POST(request: NextRequest) {
     }
 
     // Update bot settings to disable WhatsApp
-    const db = (await import('mongoose')).connection.db;
-    const collectionName = BotSettings.collection.name;
-    const collection = db.collection(collectionName);
-    
-    await collection.updateOne(
+    await BotSettings.updateOne(
       { botId: botSettings.botId },
       {
         $set: {
