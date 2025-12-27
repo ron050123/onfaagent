@@ -88,3 +88,7 @@ jspm_packages/
 
 # TernJS port file
 .tern-port
+
+# WhatsApp Web.js session data
+.wwebjs_auth/
+.wwebjs_cache/
