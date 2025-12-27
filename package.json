@@ -12,7 +12,8 @@
     "populate-bots": "node scripts/populate-bots.js",
     "populate-bots:ts": "tsx scripts/populate-bots.ts",
     "worker:telegram": "tsx scripts/telegram-worker.ts",
-    "worker:whatsapp-web": "tsx scripts/whatsapp-web-worker.ts"
+    "worker:whatsapp-web": "tsx scripts/whatsapp-web-worker.ts",
+    "worker:all": "concurrently \"npm run worker:telegram\" \"npm run worker:whatsapp-web\" --names \"TELEGRAM,WHATSAPP\" --prefix-colors \"blue,green\""
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.0.2",
@@ -49,6 +50,7 @@
     "@types/react": "^18",
     "@types/react-dom": "^18",
     "autoprefixer": "^10.0.1",
+    "concurrently": "^9.2.1",
     "dotenv": "^16.6.1",
     "eslint": "^8",
     "eslint-config-next": "14.0.4",

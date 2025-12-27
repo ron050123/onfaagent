@@ -1,2 +1,2 @@
-worker: npm run worker:telegram
+worker: npm run worker:all
 
