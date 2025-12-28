@@ -53,9 +53,14 @@ export async function sendDiscordMessage(
       throw new Error(`Channel ${channelId} is not a text channel`);
     }
 
-    const sentMessage = await channel.send(message);
-    console.log(`✅ Discord message sent to channel: ${channelId}`);
-    return sentMessage;
+    // Type guard to ensure channel has send method
+    if ('send' in channel && typeof channel.send === 'function') {
+      const sentMessage = await channel.send(message);
+      console.log(`✅ Discord message sent to channel: ${channelId}`);
+      return sentMessage as DiscordMessage;
+    } else {
+      throw new Error(`Channel ${channelId} does not support sending messages`);
+    }
   } catch (error: any) {
     console.error(`❌ Error sending Discord message:`, error);
     throw error;

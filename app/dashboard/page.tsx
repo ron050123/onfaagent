@@ -75,6 +75,15 @@ interface WhatsAppSettings {
   verifiedName?: string
 }
 
+interface DiscordSettings {
+  enabled?: boolean
+  botToken?: string
+  clientId?: string
+  guildId?: string
+  webhookUrl?: string
+  webhookSetAt?: string
+}
+
 interface BotSettings {
   _id?: string
   botId: string
@@ -89,6 +98,7 @@ interface BotSettings {
   telegram?: TelegramSettings
   messenger?: MessengerSettings
   whatsapp?: WhatsAppSettings
+  discord?: DiscordSettings
   createdAt?: string
 }
 

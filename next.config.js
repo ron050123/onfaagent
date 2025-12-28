@@ -4,14 +4,16 @@ const nextConfig = {
   
   // Exclude Node.js-only packages from server components bundling
   // These packages are not compatible with Next.js build and should only be used in standalone worker scripts
-  serverComponentsExternalPackages: [
-    'whatsapp-web.js',
-    'puppeteer',
-    'puppeteer-core',
-    'discord.js',
-    '@discordjs/rest',
-    'discord-api-types',
-  ],
+  experimental: {
+    serverComponentsExternalPackages: [
+      'whatsapp-web.js',
+      'puppeteer',
+      'puppeteer-core',
+      'discord.js',
+      '@discordjs/rest',
+      'discord-api-types',
+    ],
+  },
   
   webpack: (config, { isServer }) => {
     // Exclude Node.js-only packages from client-side bundling
