@@ -287,39 +287,79 @@ async function startBot(botId: string) {
     console.log(`[DISCORD] ✅ Discord bot logged in as: ${client.user?.tag}`);
     console.log(`[DISCORD] 🆔 Bot ID: ${client.user?.id}`);
     console.log(`[DISCORD] ✅ Bot is ready and listening for messages`);
-    console.log(`[DISCORD] 📊 Intents enabled:`, {
-      Guilds: true,
-      GuildMessages: true,
-      MessageContent: true,
-      DirectMessages: true
+    
+    // Verify intents are actually enabled
+    const intents = client.options.intents;
+    const intentsValue = intents ? Number(intents) : 0;
+    console.log(`[DISCORD] 📊 Intents verification:`, {
+      Guilds: !!(intentsValue & GatewayIntentBits.Guilds),
+      GuildMessages: !!(intentsValue & GatewayIntentBits.GuildMessages),
+      MessageContent: !!(intentsValue & GatewayIntentBits.MessageContent),
+      DirectMessages: !!(intentsValue & GatewayIntentBits.DirectMessages),
+      rawIntents: intentsValue.toString()
     });
+    
     console.log(`[DISCORD] 👂 Bot is now actively listening for messageCreate events`);
+    console.log(`[DISCORD] 🔍 Testing: Try sending a DM to ${client.user?.tag} now`);
   });
 
   // Register messageCreate handler BEFORE login
   client.on('messageCreate', async (message) => {
     try {
-      // Debug: Log all messages received
-      console.log(`[DISCORD] 🔔 messageCreate event triggered:`, {
+      // Debug: Log ALL messages received (even from bots to verify events work)
+      console.log(`[DISCORD] 🔔🔔🔔 messageCreate event triggered! 🔔🔔🔔`);
+      console.log(`[DISCORD] 📨 Message details:`, {
         author: message.author.tag,
+        authorId: message.author.id,
+        authorIsBot: message.author.bot,
         channelType: message.channel.type,
+        channelTypeName: ChannelType[message.channel.type] || `Unknown(${message.channel.type})`,
         channelId: message.channel.id,
-        content: message.content.substring(0, 50),
-        isBot: message.author.bot
+        content: message.content || '(empty)',
+        contentLength: message.content?.length || 0,
+        guildId: message.guildId || 'DM',
+        timestamp: new Date().toISOString()
       });
       
-      await handleMessage(client, botSettings, message);
+      // Only process non-bot messages
+      if (!message.author.bot) {
+        await handleMessage(client, botSettings, message);
+      } else {
+        console.log(`[DISCORD] ⏭️ Skipping bot message from: ${message.author.tag}`);
+      }
     } catch (error) {
       console.error('[DISCORD] ❌ Error handling Discord message:', error);
+      console.error('[DISCORD] ❌ Error stack:', error instanceof Error ? error.stack : String(error));
     }
+  });
+  
+  // Add debug logging for other events to verify bot is receiving events
+  client.on('messageUpdate', (oldMessage, newMessage) => {
+    console.log(`[DISCORD] 🔄 messageUpdate event: ${newMessage.author?.tag} in ${newMessage.channel.id}`);
+  });
+  
+  client.on('typingStart', (typing) => {
+    console.log(`[DISCORD] ⌨️ typingStart event: ${typing.user?.tag} is typing in ${typing.channel.id}`);
   });
 
   client.on('error', (error) => {
     console.error('[DISCORD] ❌ Discord client error:', error);
+    console.error('[DISCORD] ❌ Error details:', {
+      message: error.message,
+      stack: error.stack,
+      name: error.name
+    });
   });
 
   client.on('warn', (warning) => {
     console.warn('[DISCORD] ⚠️ Discord client warning:', warning);
+  });
+  
+  client.on('debug', (info) => {
+    // Only log important debug messages
+    if (info.includes('message') || info.includes('MESSAGE') || info.includes('intent')) {
+      console.log(`[DISCORD] 🔍 Debug: ${info}`);
+    }
   });
 
   // Login AFTER registering all event handlers
