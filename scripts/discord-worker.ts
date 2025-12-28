@@ -142,12 +142,15 @@ async function handleMessage(client: Client, botSettings: any, msg: DiscordMessa
   // Debug: Log message details
   console.log(`[DISCORD] 📨 Message received:`, {
     channelType: msg.channel.type,
+    channelTypeName: ChannelType[msg.channel.type] || `Unknown(${msg.channel.type})`,
     channelId: msg.channel.id,
-    isDM: msg.channel.type === 1 || msg.channel.type === 3, // DM or GroupDM
+    isDM: msg.channel.type === ChannelType.DM || msg.channel.type === ChannelType.GroupDM,
     author: msg.author.tag,
+    authorId: msg.author.id,
     content: msg.content.substring(0, 50),
     mentions: msg.mentions.has(client.user!),
-    isReply: msg.reference !== null
+    isReply: msg.reference !== null,
+    clientUserId: client.user?.id
   });
 
   // Only handle DMs or mentions in channels
@@ -284,6 +287,13 @@ async function startBot(botId: string) {
     console.log(`[DISCORD] ✅ Discord bot logged in as: ${client.user?.tag}`);
     console.log(`[DISCORD] 🆔 Bot ID: ${client.user?.id}`);
     console.log(`[DISCORD] ✅ Bot is ready and listening for messages`);
+    console.log(`[DISCORD] 📊 Intents enabled:`, {
+      Guilds: true,
+      GuildMessages: true,
+      MessageContent: true,
+      DirectMessages: true
+    });
+    console.log(`[DISCORD] 👂 Bot is now actively listening for messageCreate events`);
   });
 
   // Register messageCreate handler BEFORE login
@@ -316,10 +326,27 @@ async function startBot(botId: string) {
   try {
     console.log(`[DISCORD] 🔐 Logging in with bot token...`);
     console.log(`[DISCORD] 📋 Registered event handlers: ready, messageCreate, error, warn`);
+    console.log(`[DISCORD] ⏳ Waiting for bot to connect...`);
+    
     await client.login(botSettings.discord.botToken);
+    
+    // Wait a bit for ready event to fire
+    await new Promise(resolve => setTimeout(resolve, 2000));
+    
+    // Check if bot is ready
+    if (client.isReady()) {
+      console.log(`[DISCORD] ✅ Bot is READY and connected`);
+      console.log(`[DISCORD] 📊 Bot user: ${client.user?.tag} (${client.user?.id})`);
+      console.log(`[DISCORD] 📊 Bot is in ${client.guilds.cache.size} server(s)`);
+    } else {
+      console.log(`[DISCORD] ⚠️ Bot logged in but not ready yet`);
+    }
+    
     botInstances.set(botId, client);
     console.log(`[DISCORD] ✅ Discord bot started successfully for: ${botId}`);
     console.log(`[DISCORD] 👂 Bot is now listening for messages...`);
+    console.log(`[DISCORD] 💡 Send a DM to test: Bot should respond to messages`);
+    console.log(`[DISCORD] 🔍 If no response, check MESSAGE CONTENT INTENT is enabled`);
     return client;
   } catch (error: any) {
     console.error(`[DISCORD] ❌ Error logging in Discord bot for ${botId}:`, error);
