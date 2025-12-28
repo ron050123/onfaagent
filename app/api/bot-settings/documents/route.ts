@@ -6,7 +6,7 @@ import BotSettings from '@/lib/models/BotSettings';
 import { invalidateBotSettingsCache } from '@/lib/services/telegramService';
 import { invalidateKnowledgeBaseCache } from '@/lib/services/chatService';
 import { invalidateWhatsAppWebBotSettingsCache } from '@/lib/services/whatsappWebService';
-import { invalidateDiscordBotSettingsCache } from '@/lib/services/discordService';
+import { invalidateDiscordBotSettingsCache } from '@/lib/services/discordCache';
 import { v4 as uuidv4 } from 'uuid';
 import mammoth from 'mammoth';
 import { extractText } from 'unpdf';

@@ -6,7 +6,7 @@ import BotSettings from '@/lib/models/BotSettings';
 import { invalidateBotSettingsCache } from '@/lib/services/telegramService';
 import { invalidateKnowledgeBaseCache } from '@/lib/services/chatService';
 import { invalidateWhatsAppWebBotSettingsCache } from '@/lib/services/whatsappWebService';
-import { invalidateDiscordBotSettingsCache } from '@/lib/services/discordService';
+import { invalidateDiscordBotSettingsCache } from '@/lib/services/discordCache';
 
 export async function GET(request: NextRequest) {
   try {

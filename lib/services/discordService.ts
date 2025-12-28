@@ -222,18 +222,6 @@ export async function handleDiscordMessage(
   }
 }
 
-/**
- * Invalidate bot settings cache (call this when bot settings are updated)
- */
-export function invalidateDiscordBotSettingsCache(botId?: string): void {
-  if (botId) {
-    const cacheKey = `discord_${botId.trim()}`;
-    botSettingsCache.delete(cacheKey);
-    console.log(`🗑️ Invalidated Discord cache for bot: ${botId}`);
-  } else {
-    // Clear all cache
-    botSettingsCache.clear();
-    console.log('🗑️ Cleared all Discord bot settings cache');
-  }
-}
+// Export invalidateDiscordBotSettingsCache from separate file to avoid build issues
+export { invalidateDiscordBotSettingsCache } from './discordCache';
 
