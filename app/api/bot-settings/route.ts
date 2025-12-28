@@ -27,11 +27,36 @@ export async function GET(request: NextRequest) {
       if (!botSettings) {
         return NextResponse.json({ error: 'Bot not found' }, { status: 404 });
       }
-      return NextResponse.json(botSettings);
+      
+      // Ensure documents, urls, and structuredData are always arrays
+      const response = {
+        ...botSettings,
+        documents: Array.isArray(botSettings?.documents) ? botSettings.documents : [],
+        urls: Array.isArray(botSettings?.urls) ? botSettings.urls : [],
+        structuredData: Array.isArray(botSettings?.structuredData) ? botSettings.structuredData : [],
+        faqs: Array.isArray(botSettings?.faqs) ? botSettings.faqs : [],
+        categories: Array.isArray(botSettings?.categories) ? botSettings.categories : [],
+      };
+      
+      return NextResponse.json(response);
     } else {
       // Get all bots (for backward compatibility)
       const botSettings = await BotSettings.findOne({}).lean();
-      return NextResponse.json(botSettings);
+      if (!botSettings) {
+        return NextResponse.json({ error: 'No bot found' }, { status: 404 });
+      }
+      
+      // Ensure documents, urls, and structuredData are always arrays
+      const response = {
+        ...botSettings,
+        documents: Array.isArray(botSettings?.documents) ? botSettings.documents : [],
+        urls: Array.isArray(botSettings?.urls) ? botSettings.urls : [],
+        structuredData: Array.isArray(botSettings?.structuredData) ? botSettings.structuredData : [],
+        faqs: Array.isArray(botSettings?.faqs) ? botSettings.faqs : [],
+        categories: Array.isArray(botSettings?.categories) ? botSettings.categories : [],
+      };
+      
+      return NextResponse.json(response);
     }
 
   } catch (error) {

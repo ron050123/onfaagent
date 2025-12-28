@@ -405,11 +405,22 @@ export default function DashboardPage() {
       const response = await fetch(`/api/bot-settings?botId=${bot.botId}`)
       if (response.ok) {
         const fullBotData = await response.json()
-        setSelectedBot(fullBotData)
-        setTelegramToken(fullBotData.telegram?.botToken || '')
-        setMessengerPageToken(fullBotData.messenger?.pageAccessToken || '')
-        setMessengerVerifyToken(fullBotData.messenger?.verifyToken || '')
-        setMessengerAppSecret(fullBotData.messenger?.appSecret || '')
+        
+        // Ensure documents, urls, and structuredData are always arrays
+        const botDataWithDefaults = {
+          ...fullBotData,
+          documents: Array.isArray(fullBotData.documents) ? fullBotData.documents : [],
+          urls: Array.isArray(fullBotData.urls) ? fullBotData.urls : [],
+          structuredData: Array.isArray(fullBotData.structuredData) ? fullBotData.structuredData : [],
+          faqs: Array.isArray(fullBotData.faqs) ? fullBotData.faqs : [],
+          categories: Array.isArray(fullBotData.categories) ? fullBotData.categories : [],
+        }
+        
+        setSelectedBot(botDataWithDefaults)
+        setTelegramToken(botDataWithDefaults.telegram?.botToken || '')
+        setMessengerPageToken(botDataWithDefaults.messenger?.pageAccessToken || '')
+        setMessengerVerifyToken(botDataWithDefaults.messenger?.verifyToken || '')
+        setMessengerAppSecret(botDataWithDefaults.messenger?.appSecret || '')
         
         // If bot has telegram token and is enabled, load bot info automatically
         if (fullBotData.telegram?.botToken && fullBotData.telegram?.enabled) {

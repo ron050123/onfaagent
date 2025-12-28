@@ -53,8 +53,18 @@ export async function GET(request: NextRequest) {
       .limit(limit)
       .lean();
     
+    // Ensure documents, urls, and structuredData are always arrays for each bot
+    const botsWithDefaults = bots.map((bot: any) => ({
+      ...bot,
+      documents: Array.isArray(bot?.documents) ? bot.documents : [],
+      urls: Array.isArray(bot?.urls) ? bot.urls : [],
+      structuredData: Array.isArray(bot?.structuredData) ? bot.structuredData : [],
+      faqs: Array.isArray(bot?.faqs) ? bot.faqs : [],
+      categories: Array.isArray(bot?.categories) ? bot.categories : [],
+    }));
+    
     return NextResponse.json({
-      bots,
+      bots: botsWithDefaults,
       pagination: {
         currentPage: page,
         totalPages,
