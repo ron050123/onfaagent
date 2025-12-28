@@ -238,6 +238,8 @@ export function generateSystemPrompt(botSettings: IBotSettings, platform?: strin
     ? 'Provide informative answers with key details. Balance between being comprehensive and concise.'
     : platform === 'whatsapp'
     ? 'Provide informative answers with key details. Balance between being comprehensive and concise.'
+    : platform === 'discord'
+    ? 'Provide informative answers with key details. Balance between being comprehensive and concise.'
     : platform === 'facebook' || platform === 'zalo'
     ? 'Be friendly and engaging.'
     : '';
@@ -333,8 +335,8 @@ export async function processChatMessage(
 
   // Try with optimized knowledge base first
   try {
-    // Use larger knowledge base for Telegram and WhatsApp to include more documents (max 20000 chars)
-    const maxKbLength = (platform === 'telegram' || platform === 'whatsapp') ? 20000 : undefined;
+    // Use larger knowledge base for Telegram, WhatsApp, and Discord to include more documents (max 20000 chars)
+    const maxKbLength = (platform === 'telegram' || platform === 'whatsapp' || platform === 'discord') ? 20000 : undefined;
     const systemPrompt = generateSystemPrompt(botSettings, platform, maxKbLength);
     
     const completion = await Promise.race([

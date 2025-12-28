@@ -111,7 +111,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [copiedBotId, setCopiedBotId] = useState<string | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
-  const [activeTab, setActiveTab] = useState<'faq' | 'documents' | 'urls' | 'structured' | 'telegram' | 'messenger' | 'whatsapp'>('faq')
+  const [activeTab, setActiveTab] = useState<'faq' | 'documents' | 'urls' | 'structured' | 'telegram' | 'messenger' | 'whatsapp' | 'discord'>('faq')
   const [newUrl, setNewUrl] = useState('')
   const [newUrlCategory, setNewUrlCategory] = useState('')
   const [newUrlTags, setNewUrlTags] = useState('')
@@ -195,6 +195,12 @@ export default function DashboardPage() {
   const [whatsappLoading, setWhatsappLoading] = useState(false)
   const [whatsappQRCode, setWhatsappQRCode] = useState<string | null>(null)
   const [whatsappStatus, setWhatsappStatus] = useState<any>(null)
+  
+  // Discord state
+  const [discordToken, setDiscordToken] = useState('')
+  const [discordClientId, setDiscordClientId] = useState('')
+  const [discordGuildId, setDiscordGuildId] = useState('')
+  const [discordLoading, setDiscordLoading] = useState(false)
 
   useEffect(() => {
     if (status === 'unauthenticated') {
@@ -379,6 +385,9 @@ export default function DashboardPage() {
     setMessengerPageInfo(null)
     setWhatsappQRCode(null)
     setWhatsappStatus(null)
+    setDiscordToken(bot.discord?.botToken || '')
+    setDiscordClientId(bot.discord?.clientId || '')
+    setDiscordGuildId(bot.discord?.guildId || '')
     loadAnalytics(bot.botId)
     
     // Load full bot data from API to ensure we have latest settings
@@ -1048,6 +1057,89 @@ export default function DashboardPage() {
   }
 
   // WhatsApp Web functions
+  // Discord functions
+  const handleEnableDiscord = async () => {
+    if (!selectedBot || !discordToken.trim()) return
+
+    setDiscordLoading(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    try {
+      const response = await fetch('/api/bot-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          botId: selectedBot.botId,
+          discord: {
+            enabled: true,
+            botToken: discordToken.trim(),
+            clientId: discordClientId.trim() || undefined,
+            guildId: discordGuildId.trim() || undefined
+          }
+        })
+      })
+
+      if (response.ok) {
+        const updatedBot = await response.json()
+        setSelectedBot(updatedBot)
+        setAllBots(prev => prev.map(bot => bot.botId === selectedBot.botId ? updatedBot : bot))
+        setSuccessMessage('Discord bot đã được kích hoạt! Đảm bảo Discord Worker đang chạy (npm run worker:discord)')
+        setTimeout(() => setSuccessMessage(''), 5000)
+      } else {
+        const error = await response.json()
+        setErrorMessage(error.error || 'Không thể kích hoạt Discord bot')
+        setTimeout(() => setErrorMessage(''), 5000)
+      }
+    } catch (error) {
+      setErrorMessage('Lỗi kết nối. Vui lòng thử lại.')
+      setTimeout(() => setErrorMessage(''), 5000)
+    } finally {
+      setDiscordLoading(false)
+    }
+  }
+
+  const handleDisableDiscord = async () => {
+    if (!selectedBot) return
+
+    setDiscordLoading(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    try {
+      const response = await fetch('/api/bot-settings', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          botId: selectedBot.botId,
+          discord: {
+            enabled: false
+          }
+        })
+      })
+
+      if (response.ok) {
+        const updatedBot = await response.json()
+        setSelectedBot(updatedBot)
+        setAllBots(prev => prev.map(bot => bot.botId === selectedBot.botId ? updatedBot : bot))
+        setSuccessMessage('Đã vô hiệu hóa Discord bot thành công!')
+        setDiscordToken('')
+        setDiscordClientId('')
+        setDiscordGuildId('')
+        setTimeout(() => setSuccessMessage(''), 3000)
+      } else {
+        const error = await response.json()
+        setErrorMessage(error.error || 'Không thể vô hiệu hóa Discord bot')
+        setTimeout(() => setErrorMessage(''), 5000)
+      }
+    } catch (error) {
+      setErrorMessage('Lỗi kết nối. Vui lòng thử lại.')
+      setTimeout(() => setErrorMessage(''), 5000)
+    } finally {
+      setDiscordLoading(false)
+    }
+  }
+
   const handleGetWhatsAppQRCode = async () => {
     if (!selectedBot) return
 
@@ -1628,7 +1720,8 @@ export default function DashboardPage() {
                           { id: 'structured', name: 'Dữ liệu', fullName: 'Dữ liệu cấu trúc', icon: BarChart3 },
                           { id: 'telegram', name: 'Telegram', fullName: 'Telegram Bot', icon: Send },
                           { id: 'messenger', name: 'Messenger', fullName: 'Messenger Bot', icon: MessageCircle },
-                          { id: 'whatsapp', name: 'WhatsApp', fullName: 'WhatsApp Web Bot', icon: MessageSquare }
+                          { id: 'whatsapp', name: 'WhatsApp', fullName: 'WhatsApp Web Bot', icon: MessageSquare },
+                          { id: 'discord', name: 'Discord', fullName: 'Discord Bot', icon: MessageCircle }
                         ].map((tab) => {
                           const Icon = tab.icon
                           return (
@@ -2505,6 +2598,167 @@ export default function DashboardPage() {
                                 {whatsappLoading ? 'Đang kiểm tra...' : 'Kiểm tra trạng thái'}
                               </Button>
                             </>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Discord Tab */}
+                    {activeTab === 'discord' && (
+                      <div className="space-y-6">
+                        <div className="bg-indigo-50 border border-indigo-200 rounded-lg p-4">
+                          <div className="flex items-start">
+                            <div className="w-5 h-5 bg-indigo-500 rounded-full flex items-center justify-center mr-3 mt-0.5">
+                              <span className="text-white text-xs font-bold">i</span>
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-indigo-900 mb-2">Hướng dẫn tích hợp Discord Bot</h4>
+                              <div className="text-sm text-indigo-800 space-y-2">
+                                <p><strong>1. Tạo bot trên Discord:</strong> Vào <a href="https://discord.com/developers/applications" target="_blank" rel="noopener noreferrer" className="underline">Discord Developer Portal</a> và tạo New Application</p>
+                                <p><strong>2. Tạo Bot:</strong> Vào tab "Bot", nhấn "Add Bot" và copy Bot Token</p>
+                                <p><strong>3. Bật Intents:</strong> Bật các intents sau trong Bot settings:
+                                  <ul className="list-disc ml-6 mt-1">
+                                    <li>MESSAGE CONTENT INTENT</li>
+                                    <li>SERVER MEMBERS INTENT (nếu cần)</li>
+                                  </ul>
+                                </p>
+                                <p><strong>4. Lấy Client ID:</strong> Vào tab "General Information", copy Application ID (Client ID)</p>
+                                <p><strong>5. Invite Bot:</strong> Dùng link: <code className="bg-indigo-100 px-1 rounded">https://discord.com/api/oauth2/authorize?client_id=YOUR_CLIENT_ID&permissions=2048&scope=bot</code> (thay YOUR_CLIENT_ID)</p>
+                                <p><strong>6. Nhập thông tin:</strong> Dán Bot Token, Client ID, và Guild ID (Server ID) vào các ô bên dưới</p>
+                                <p><strong>7. Kích hoạt bot:</strong> Nhấn "Kích hoạt Discord Bot" để bắt đầu sử dụng</p>
+                                <p className="text-indigo-600 font-medium">✨ Bot sẽ tự động trả lời tin nhắn DM và khi được mention (@bot) dựa trên FAQs và knowledge base của bạn!</p>
+                                <p className="text-yellow-700 font-medium">⚠️ Lưu ý: Cần chạy Discord Worker để bot hoạt động. Chạy: <code className="bg-yellow-100 px-1 rounded">npm run worker:discord</code></p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Error/Success Messages */}
+                        {errorMessage && (
+                          <div className="p-4 bg-red-50 border border-red-200 text-red-800 rounded-md">
+                            <div className="flex items-center">
+                              <div className="text-red-500 text-lg mr-2">⚠️</div>
+                              {errorMessage}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {successMessage && (
+                          <div className="p-4 bg-green-50 border border-green-200 text-green-800 rounded-md">
+                            <div className="flex items-center">
+                              <div className="text-green-500 text-lg mr-2">✅</div>
+                              {successMessage}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Discord Bot Token Input */}
+                        <div className="space-y-4">
+                          <div>
+                            <Label htmlFor="discord-token" className="text-sm font-semibold text-gray-700 mb-2 block">
+                              Discord Bot Token
+                            </Label>
+                            <Input
+                              id="discord-token"
+                              type="password"
+                              value={discordToken}
+                              onChange={(e) => setDiscordToken(e.target.value)}
+                              placeholder="MTIzNDU2Nzg5MEFCQ0RFRkdISUpLTE1OT1BRUlNUVVZXWFla"
+                              className="flex-1 border border-gray-200 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                              disabled={selectedBot?.discord?.enabled}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              Token được lưu trữ an toàn và chỉ dùng để kết nối với Discord API
+                            </p>
+                          </div>
+
+                          <div>
+                            <Label htmlFor="discord-client-id" className="text-sm font-semibold text-gray-700 mb-2 block">
+                              Client ID (Application ID)
+                            </Label>
+                            <Input
+                              id="discord-client-id"
+                              type="text"
+                              value={discordClientId}
+                              onChange={(e) => setDiscordClientId(e.target.value)}
+                              placeholder="123456789012345678"
+                              className="flex-1 border border-gray-200 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                              disabled={selectedBot?.discord?.enabled}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              Application ID từ Discord Developer Portal
+                            </p>
+                          </div>
+
+                          <div>
+                            <Label htmlFor="discord-guild-id" className="text-sm font-semibold text-gray-700 mb-2 block">
+                              Guild ID (Server ID) - Tùy chọn
+                            </Label>
+                            <Input
+                              id="discord-guild-id"
+                              type="text"
+                              value={discordGuildId}
+                              onChange={(e) => setDiscordGuildId(e.target.value)}
+                              placeholder="987654321098765432"
+                              className="flex-1 border border-gray-200 rounded-md focus:ring-2 focus:ring-indigo-500 focus:border-indigo-500 font-mono text-sm"
+                              disabled={selectedBot?.discord?.enabled}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              Server ID nếu muốn giới hạn bot chỉ hoạt động trong server cụ thể (để trống để hoạt động ở mọi server)
+                            </p>
+                          </div>
+
+                          {/* Current Status */}
+                          {selectedBot?.discord?.enabled && (
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <h4 className="font-medium text-green-900 mb-1">✅ Discord Bot đã được kích hoạt</h4>
+                                  <p className="text-sm text-green-700">
+                                    Bot Token: <strong>••••••••{selectedBot.discord.botToken?.slice(-8)}</strong>
+                                  </p>
+                                  {selectedBot.discord.clientId && (
+                                    <p className="text-sm text-green-700">
+                                      Client ID: <strong>{selectedBot.discord.clientId}</strong>
+                                    </p>
+                                  )}
+                                  {selectedBot.discord.guildId && (
+                                    <p className="text-sm text-green-700">
+                                      Guild ID: <strong>{selectedBot.discord.guildId}</strong>
+                                    </p>
+                                  )}
+                                </div>
+                                <Button
+                                  onClick={handleDisableDiscord}
+                                  disabled={discordLoading}
+                                  variant="outline"
+                                  className="text-red-600 border-red-200 hover:bg-red-50"
+                                >
+                                  {discordLoading ? 'Đang xử lý...' : 'Vô hiệu hóa'}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Activate Button */}
+                          {!selectedBot?.discord?.enabled && discordToken && (
+                            <Button
+                              onClick={handleEnableDiscord}
+                              disabled={!discordToken.trim() || discordLoading}
+                              className="w-full bg-gradient-to-r from-indigo-600 to-purple-600 hover:from-indigo-700 hover:to-purple-700 text-white"
+                            >
+                              {discordLoading ? (
+                                <>
+                                  <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                                  Đang kích hoạt...
+                                </>
+                              ) : (
+                                <>
+                                  <MessageCircle className="w-4 h-4 mr-2" />
+                                  Kích hoạt Discord Bot
+                                </>
+                              )}
+                            </Button>
                           )}
                         </div>
                       </div>

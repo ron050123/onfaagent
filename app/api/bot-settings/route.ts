@@ -6,6 +6,7 @@ import BotSettings from '@/lib/models/BotSettings';
 import { invalidateBotSettingsCache } from '@/lib/services/telegramService';
 import { invalidateKnowledgeBaseCache } from '@/lib/services/chatService';
 import { invalidateWhatsAppWebBotSettingsCache } from '@/lib/services/whatsappWebService';
+import { invalidateDiscordBotSettingsCache } from '@/lib/services/discordService';
 
 export async function GET(request: NextRequest) {
   try {
@@ -50,7 +51,7 @@ export async function POST(request: NextRequest) {
       return NextResponse.json({ error: 'Unauthorized' }, { status: 401 });
     }
 
-    const { botId, name, welcomeMessage, themeColor, faqs, documents, urls, structuredData, categories, whatsapp } = await request.json();
+    const { botId, name, welcomeMessage, themeColor, faqs, documents, urls, structuredData, categories, whatsapp, discord } = await request.json();
 
     if (!botId) {
       return NextResponse.json(
@@ -110,9 +111,38 @@ export async function POST(request: NextRequest) {
       botSettings = await BotSettings.findOne({ botId });
     }
 
+    // If discord field is provided, update it separately to preserve existing discord settings
+    if (discord !== undefined) {
+      // Get existing discord settings
+      const existingBot = await BotSettings.findOne({ botId }).lean() as any;
+      const existingDiscord = existingBot?.discord || {};
+      
+      // Merge existing discord settings with new ones
+      const updatedDiscord = { ...existingDiscord, ...discord };
+      
+      // Use MongoDB native update for nested discord field
+      const mongooseConnection = await connectDB();
+      if (mongooseConnection?.connection?.db) {
+        const db = mongooseConnection.connection.db;
+        const collection = db.collection(BotSettings.collection.name);
+        
+        await collection.updateOne(
+          { botId },
+          { $set: { 'discord': updatedDiscord } }
+        );
+        
+        console.log(`✅ Discord settings updated for bot: ${botId}`);
+        console.log(`   Updated discord:`, JSON.stringify(updatedDiscord, null, 2));
+      }
+      
+      // Reload bot to get updated discord settings
+      botSettings = await BotSettings.findOne({ botId });
+    }
+
     // Invalidate all caches when settings are updated
     invalidateBotSettingsCache(botId);
     invalidateWhatsAppWebBotSettingsCache(botId);
+    invalidateDiscordBotSettingsCache(botId);
     invalidateKnowledgeBaseCache(botId);
     console.log(`✅ Invalidated all caches for bot: ${botId}`);
 

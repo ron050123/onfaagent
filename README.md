@@ -183,18 +183,36 @@ Modify the system prompt in `/app/api/chat/route.ts` to change how the AI respon
 
 ## 🚀 Deployment
 
-### Vercel (Recommended)
+### Vercel (Recommended for Next.js App)
+
+Xem hướng dẫn chi tiết: [docs/DEPLOYMENT.md](docs/DEPLOYMENT.md)
 
 1. Push your code to GitHub
 2. Connect your repository to Vercel
 3. Add environment variables in Vercel dashboard
 4. Deploy
 
+### Railway (For Workers: Telegram, WhatsApp, Discord)
+
+**✨ Tự động hóa:** Project đã có sẵn file cấu hình Railway - Deploy một lần → Tự động chạy tất cả workers!
+
+**Quick Start:**
+1. Create new Railway project
+2. Deploy from GitHub repo
+3. Railway tự động detect `railway.json` và chạy tất cả workers (Telegram, WhatsApp Web, Discord)
+4. Add environment variables: `MONGODB_URI`, `OPENAI_API_KEY`
+5. Done! ✅ Tất cả workers sẽ chạy song song trong một service
+
+Xem hướng dẫn chi tiết:
+- **Railway Deployment:** [docs/RAILWAY_DEPLOYMENT.md](docs/RAILWAY_DEPLOYMENT.md) - Hướng dẫn đầy đủ
+- **Railway Configuration:** [RAILWAY_CONFIG.md](RAILWAY_CONFIG.md) - Giải thích cấu hình
+- **Telegram Worker:** [docs/TELEGRAM_WORKER_STANDALONE.md](docs/TELEGRAM_WORKER_STANDALONE.md)
+- **WhatsApp Web Worker:** [docs/WHATSAPP_WEB_INTEGRATION.md](docs/WHATSAPP_WEB_INTEGRATION.md)
+
 ### Other Platforms
 
 The application can be deployed to any platform that supports Next.js:
 - Netlify
-- Railway
 - DigitalOcean App Platform
 - AWS Amplify
 

@@ -4,8 +4,9 @@ nixPkgs = ['nodejs-18_x', 'chromium']
 [phases.install]
 cmds = ['npm ci']
 
-[phases.build]
-cmds = ['npm run build']
+# Không cần build Next.js app cho workers
+# [phases.build]
+# cmds = ['npm run build']
 
 [start]
 cmd = 'npm run worker:all'

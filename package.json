@@ -13,7 +13,8 @@
     "populate-bots:ts": "tsx scripts/populate-bots.ts",
     "worker:telegram": "tsx scripts/telegram-worker.ts",
     "worker:whatsapp-web": "tsx scripts/whatsapp-web-worker.ts",
-    "worker:all": "concurrently \"npm run worker:telegram\" \"npm run worker:whatsapp-web\" --names \"TELEGRAM,WHATSAPP\" --prefix-colors \"blue,green\""
+    "worker:discord": "tsx scripts/discord-worker.ts",
+    "worker:all": "concurrently \"npm run worker:telegram\" \"npm run worker:whatsapp-web\" \"npm run worker:discord\" --names \"TELEGRAM,WHATSAPP,DISCORD\" --prefix-colors \"blue,green,magenta\""
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.0.2",
@@ -33,6 +34,7 @@
     "mysql2": "^3.15.2",
     "next": "14.0.4",
     "next-auth": "^4.24.5",
+    "discord.js": "^14.14.1",
     "node-telegram-bot-api": "^0.67.0",
     "openai": "^4.20.1",
     "qrcode": "^1.5.4",

@@ -66,6 +66,15 @@ export interface IWhatsAppSettings {
   qrCodeExpiresAt?: Date;
 }
 
+export interface IDiscordSettings {
+  enabled: boolean;
+  botToken?: string;
+  clientId?: string;
+  guildId?: string;
+  webhookUrl?: string;
+  webhookSetAt?: Date;
+}
+
 export interface IBotSettings extends Document {
   botId: string;
   userId: string;
@@ -80,6 +89,7 @@ export interface IBotSettings extends Document {
   telegram?: ITelegramSettings;
   messenger?: IMessengerSettings;
   whatsapp?: IWhatsAppSettings;
+  discord?: IDiscordSettings;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -176,6 +186,14 @@ const BotSettingsSchema = new Schema<IBotSettings>({
     verifiedName: { type: String },
     qrCode: { type: String },
     qrCodeExpiresAt: { type: Date }
+  },
+  discord: {
+    enabled: { type: Boolean, default: false },
+    botToken: { type: String },
+    clientId: { type: String },
+    guildId: { type: String },
+    webhookUrl: { type: String },
+    webhookSetAt: { type: Date }
   }
 }, {
   timestamps: true

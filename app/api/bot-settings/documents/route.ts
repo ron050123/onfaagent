@@ -6,6 +6,7 @@ import BotSettings from '@/lib/models/BotSettings';
 import { invalidateBotSettingsCache } from '@/lib/services/telegramService';
 import { invalidateKnowledgeBaseCache } from '@/lib/services/chatService';
 import { invalidateWhatsAppWebBotSettingsCache } from '@/lib/services/whatsappWebService';
+import { invalidateDiscordBotSettingsCache } from '@/lib/services/discordService';
 import { v4 as uuidv4 } from 'uuid';
 import mammoth from 'mammoth';
 import { extractText } from 'unpdf';
@@ -121,6 +122,7 @@ export async function POST(request: NextRequest) {
     // Invalidate all caches when settings are updated
     invalidateBotSettingsCache(botId);
     invalidateWhatsAppWebBotSettingsCache(botId);
+    invalidateDiscordBotSettingsCache(botId);
     invalidateKnowledgeBaseCache(botId);
     console.log(`✅ Invalidated all caches for bot: ${botId}`);
 
@@ -169,6 +171,7 @@ export async function DELETE(request: NextRequest) {
     // Invalidate all caches when settings are updated
     invalidateBotSettingsCache(botId);
     invalidateWhatsAppWebBotSettingsCache(botId);
+    invalidateDiscordBotSettingsCache(botId);
     invalidateKnowledgeBaseCache(botId);
     console.log(`✅ Invalidated all caches for bot: ${botId}`);
 
@@ -216,6 +219,7 @@ export async function PUT(request: NextRequest) {
     // Invalidate all caches when settings are updated
     invalidateBotSettingsCache(botId);
     invalidateWhatsAppWebBotSettingsCache(botId);
+    invalidateDiscordBotSettingsCache(botId);
     invalidateKnowledgeBaseCache(botId);
     console.log(`✅ Invalidated all caches for bot: ${botId}`);
 
