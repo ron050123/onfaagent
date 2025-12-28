@@ -283,7 +283,7 @@ async function startBot(botId: string) {
   });
 
   // Register event handlers BEFORE login to ensure they're active
-  client.once('ready', () => {
+  client.once('ready', async () => {
     console.log(`[DISCORD] ✅ Discord bot logged in as: ${client.user?.tag}`);
     console.log(`[DISCORD] 🆔 Bot ID: ${client.user?.id}`);
     console.log(`[DISCORD] ✅ Bot is ready and listening for messages`);
@@ -299,8 +299,30 @@ async function startBot(botId: string) {
       rawIntents: intentsValue.toString()
     });
     
+    // CRITICAL: Check if MessageContent intent is enabled
+    const hasMessageContent = !!(intentsValue & GatewayIntentBits.MessageContent);
+    if (!hasMessageContent) {
+      console.error(`[DISCORD] ❌❌❌ CRITICAL: MESSAGE CONTENT INTENT IS NOT ENABLED! ❌❌❌`);
+      console.error(`[DISCORD] ❌ Bot will NOT receive message content without this intent!`);
+      console.error(`[DISCORD] ❌ Go to Discord Developer Portal → Bot → Privileged Gateway Intents → Enable MESSAGE CONTENT INTENT`);
+    } else {
+      console.log(`[DISCORD] ✅ MESSAGE CONTENT INTENT is enabled`);
+    }
+    
     console.log(`[DISCORD] 👂 Bot is now actively listening for messageCreate events`);
     console.log(`[DISCORD] 🔍 Testing: Try sending a DM to ${client.user?.tag} now`);
+    console.log(`[DISCORD] 🔍 Also try typing in DM (you should see typingStart event)`);
+    
+    // Test: Try to send a test message to verify bot can send messages
+    try {
+      // Get DMs channel if available
+      const dms = client.channels.cache.filter(ch => ch.type === ChannelType.DM);
+      if (dms.size > 0) {
+        console.log(`[DISCORD] 📊 Found ${dms.size} DM channel(s) in cache`);
+      }
+    } catch (error) {
+      console.error(`[DISCORD] ⚠️ Error checking DM channels:`, error);
+    }
   });
 
   // Register messageCreate handler BEFORE login
@@ -334,12 +356,26 @@ async function startBot(botId: string) {
   });
   
   // Add debug logging for other events to verify bot is receiving events
+  // These events don't require MESSAGE CONTENT INTENT, so if we see these but not messageCreate,
+  // it confirms MESSAGE CONTENT INTENT is the issue
   client.on('messageUpdate', (oldMessage, newMessage) => {
     console.log(`[DISCORD] 🔄 messageUpdate event: ${newMessage.author?.tag} in ${newMessage.channel.id}`);
   });
   
   client.on('typingStart', (typing) => {
-    console.log(`[DISCORD] ⌨️ typingStart event: ${typing.user?.tag} is typing in ${typing.channel.id}`);
+    console.log(`[DISCORD] ⌨️⌨️⌨️ typingStart event received! ⌨️⌨️⌨️`);
+    console.log(`[DISCORD] ⌨️ User: ${typing.user?.tag} is typing in channel: ${typing.channel.id}`);
+    console.log(`[DISCORD] ⌨️ This event works WITHOUT MESSAGE CONTENT INTENT`);
+  });
+  
+  // Log all raw events to see what Discord is sending
+  client.on('raw', (event) => {
+    if (event.t === 'MESSAGE_CREATE' || event.t === 'TYPING_START') {
+      console.log(`[DISCORD] 📡 Raw event received: ${event.t}`, {
+        type: event.t,
+        timestamp: new Date().toISOString()
+      });
+    }
   });
 
   client.on('error', (error) => {
@@ -356,10 +392,25 @@ async function startBot(botId: string) {
   });
   
   client.on('debug', (info) => {
-    // Only log important debug messages
-    if (info.includes('message') || info.includes('MESSAGE') || info.includes('intent')) {
+    // Log important debug messages
+    if (info.includes('message') || info.includes('MESSAGE') || info.includes('intent') || 
+        info.includes('MESSAGE_CREATE') || info.includes('TYPING_START') ||
+        info.includes('Gateway') || info.includes('WebSocket')) {
       console.log(`[DISCORD] 🔍 Debug: ${info}`);
     }
+  });
+  
+  // Log when client connects/disconnects
+  client.on('shardReady', (id) => {
+    console.log(`[DISCORD] 🔌 Shard ${id} is ready`);
+  });
+  
+  client.on('shardDisconnect', (event, id) => {
+    console.error(`[DISCORD] ❌ Shard ${id} disconnected:`, event);
+  });
+  
+  client.on('shardReconnecting', (id) => {
+    console.log(`[DISCORD] 🔄 Shard ${id} is reconnecting`);
   });
 
   // Login AFTER registering all event handlers
