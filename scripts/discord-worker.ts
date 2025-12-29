@@ -477,22 +477,45 @@ async function main() {
       }
     }
 
-    // Refresh bot list every 30 seconds
+    // Refresh bot list every 15 seconds (reduced for faster updates)
     setInterval(async () => {
       try {
+        console.log(`[DISCORD] 🔄 Refreshing bot list and checking for updates...`);
         const currentBots = Array.from(botInstances.keys());
         const enabledBots = await BotSettings.find({
           'discord.enabled': true,
           'discord.botToken': { $exists: true, $ne: null }
-        }).select('botId').lean() as any[];
+        }).select('botId name updatedAt').lean() as any[];
 
         const enabledBotIds = enabledBots.map(b => b.botId);
 
-        // Start new bots
+        // Start new bots or reload if settings changed
         for (const bot of enabledBots) {
           if (!botInstances.has(bot.botId)) {
-            console.log(`🔄 Starting new Discord bot: ${bot.botId}`);
+            console.log(`[DISCORD] 🔄 Starting new Discord bot: ${bot.botId}`);
             await startBot(bot.botId);
+          } else {
+            // Check if bot settings were updated
+            const cached = workerBotSettings.get(bot.botId);
+            const dbUpdatedAt = new Date(bot.updatedAt).getTime();
+            const cacheUpdatedAt = cached?.settings?.updatedAt ? new Date(cached.settings.updatedAt).getTime() : 0;
+            
+            if (dbUpdatedAt > cacheUpdatedAt) {
+              console.log(`[DISCORD] 🔄 Bot settings updated for ${bot.botId}, reloading...`);
+              console.log(`[DISCORD]    Cache: ${new Date(cacheUpdatedAt).toISOString()}, DB: ${new Date(dbUpdatedAt).toISOString()}`);
+              
+              // Clear cache and reload
+              workerBotSettings.delete(bot.botId);
+              
+              // Restart bot to load new settings
+              const client = botInstances.get(bot.botId);
+              if (client) {
+                console.log(`[DISCORD] 🔄 Restarting bot ${bot.botId} to load new settings...`);
+                await client.destroy();
+                botInstances.delete(bot.botId);
+                await startBot(bot.botId);
+              }
+            }
           }
         }
 
