@@ -36,6 +36,9 @@ if (!OPENAI_API_KEY) {
 const botSettingsCache = new Map<string, { settings: any; timestamp: number }>();
 const BOT_SETTINGS_CACHE_TTL = 5 * 60 * 1000; // 5 minutes
 
+// Alias for worker cache (same as botSettingsCache)
+const workerBotSettings = botSettingsCache;
+
 // Store active Discord bot instances
 const botInstances = new Map<string, Client>();
 
