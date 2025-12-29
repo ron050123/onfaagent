@@ -23,7 +23,7 @@ export async function GET(request: NextRequest) {
 
     if (botId) {
       // Get specific bot settings - use lean() to get plain object
-      const botSettings = await BotSettings.findOne({ botId }).lean();
+      const botSettings = await BotSettings.findOne({ botId }).lean() as any;
       if (!botSettings) {
         return NextResponse.json({ error: 'Bot not found' }, { status: 404 });
       }
@@ -41,7 +41,7 @@ export async function GET(request: NextRequest) {
       return NextResponse.json(response);
     } else {
       // Get all bots (for backward compatibility)
-      const botSettings = await BotSettings.findOne({}).lean();
+      const botSettings = await BotSettings.findOne({}).lean() as any;
       if (!botSettings) {
         return NextResponse.json({ error: 'No bot found' }, { status: 404 });
       }
