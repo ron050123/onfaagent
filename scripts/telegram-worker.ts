@@ -197,7 +197,12 @@ async function handleMessage(bot: TelegramBot, botSettings: any, message: Telegr
   let text = message.text || '';
   const userId = message.from?.id.toString();
 
-  console.log(`🤖 Processing message: chatId=${chatId}, text="${text}"`);
+  console.log(`🤖 [TELEGRAM] Processing message for bot ${botSettings.botId}:`, {
+    chatId,
+    text: text.substring(0, 100),
+    chatType: message.chat.type,
+    from: message.from?.username || message.from?.id
+  });
 
   // Handle /start command
   if (text === '/start') {
@@ -237,30 +242,50 @@ async function handleMessage(bot: TelegramBot, botSettings: any, message: Telegr
 
   try {
     // Process with AI
-    console.log(`🤖 Processing message with AI: "${text}"`);
+    console.log(`🤖 [TELEGRAM] Processing message with AI: "${text.substring(0, 100)}"`);
     
     // Debug: Check bot settings data
-    console.log(`📋 Bot settings check:`);
-    console.log(`   Bot ID: ${botSettings.botId}`);
+    console.log(`📋 [TELEGRAM] Bot settings check for ${botSettings.botId}:`);
     console.log(`   Bot Name: ${botSettings.name}`);
     console.log(`   FAQs count: ${botSettings.faqs?.length || 0}`);
     console.log(`   Documents count: ${botSettings.documents?.filter((d: any) => d.enabled)?.length || 0}`);
     console.log(`   URLs count: ${botSettings.urls?.filter((u: any) => u.enabled)?.length || 0}`);
     console.log(`   Structured data count: ${botSettings.structuredData?.filter((s: any) => s.enabled)?.length || 0}`);
     
-    const reply = await processChatMessage(
-      botSettings,
-      text,
-      OPENAI_API_KEY!,
-      'telegram'
-    );
+    // Add timeout wrapper to ensure we always respond
+    const reply = await Promise.race([
+      processChatMessage(
+        botSettings,
+        text,
+        OPENAI_API_KEY!,
+        'telegram'
+      ),
+      // Fallback timeout - if AI takes too long, send a default message
+      new Promise<string>((resolve) => 
+        setTimeout(() => {
+          console.warn(`⚠️ [TELEGRAM] AI processing timeout, sending default response`);
+          resolve('Xin lỗi, tôi đang xử lý yêu cầu của bạn. Vui lòng đợi một chút...');
+        }, 18000) // 18 seconds timeout
+      )
+    ]);
 
     clearInterval(typingInterval);
-    console.log(`✅ AI reply generated: "${reply.substring(0, 100)}..."`);
+    console.log(`✅ [TELEGRAM] AI reply generated (${reply.length} chars): "${reply.substring(0, 100)}..."`);
 
-    // Send reply
-    await sendMessage(bot, chatId, reply);
-    console.log('✅ Reply sent to Telegram');
+    // Send reply with retry
+    try {
+      await sendMessage(bot, chatId, reply);
+      console.log('✅ [TELEGRAM] Reply sent successfully');
+    } catch (sendError: any) {
+      console.error('❌ [TELEGRAM] Error sending reply:', sendError);
+      // Try to send a simpler error message
+      try {
+        await bot.sendMessage(chatId, 'Xin lỗi, tôi gặp sự cố khi gửi phản hồi. Vui lòng thử lại sau.');
+      } catch (fallbackError) {
+        console.error('❌ [TELEGRAM] Failed to send fallback message:', fallbackError);
+      }
+      throw sendError; // Re-throw to be caught by outer catch
+    }
 
     // Track message asynchronously
     setImmediate(async () => {
@@ -281,18 +306,35 @@ async function handleMessage(bot: TelegramBot, botSettings: any, message: Telegr
     });
   } catch (error: any) {
     clearInterval(typingInterval);
-    console.error('❌ Error processing message:', error);
+    console.error('❌ [TELEGRAM] Error processing message:', error);
+    console.error('   Error type:', error.constructor.name);
+    console.error('   Error message:', error.message);
+    console.error('   Error stack:', error.stack);
 
+    // Always try to send an error message to user
     const errorMsg = error.message?.includes('timeout')
       ? 'Xin lỗi, yêu cầu của bạn mất quá nhiều thời gian để xử lý. Vui lòng thử lại sau.'
       : error.message?.includes('Rate limit')
       ? 'Xin lỗi, hệ thống đang quá tải. Vui lòng thử lại sau vài giây.'
       : 'Xin lỗi, tôi đang gặp sự cố khi xử lý tin nhắn của bạn. Vui lòng thử lại sau.';
 
-    try {
-      await sendMessage(bot, chatId, errorMsg);
-    } catch {
-      // Ignore if sending error message fails
+    // Try multiple times to send error message
+    let sent = false;
+    for (let attempt = 1; attempt <= 3 && !sent; attempt++) {
+      try {
+        await bot.sendMessage(chatId, errorMsg);
+        console.log(`✅ [TELEGRAM] Error message sent to user (attempt ${attempt})`);
+        sent = true;
+      } catch (sendError: any) {
+        console.error(`❌ [TELEGRAM] Failed to send error message (attempt ${attempt}):`, sendError);
+        if (attempt < 3) {
+          await new Promise(resolve => setTimeout(resolve, 1000)); // Wait 1 second before retry
+        }
+      }
+    }
+    
+    if (!sent) {
+      console.error('❌ [TELEGRAM] Could not send error message to user after 3 attempts');
     }
   }
 }
@@ -323,33 +365,47 @@ async function startBot(botSettings: any) {
       params: {
         timeout: 30, // Increased from 10 to 30 seconds for better reliability
       }
-    },
-    // Add request options for better timeout handling
-    request: {
-      agentOptions: {
-        keepAlive: true,
-        keepAliveMsecs: 30000,
-      },
-      timeout: 30000, // 30 seconds timeout
     }
   });
 
-  // Set up message handler
+  // Set up message handler with better logging
   bot.on('message', async (msg) => {
     try {
+      console.log(`📨 [TELEGRAM] Message received for bot ${botSettings.botId}:`, {
+        chatId: msg.chat.id,
+        chatType: msg.chat.type,
+        text: msg.text,
+        from: msg.from?.username || msg.from?.id,
+        messageId: msg.message_id
+      });
       await handleMessage(bot, botSettings, msg);
     } catch (error) {
-      console.error('❌ Error in message handler:', error);
+      console.error('❌ [TELEGRAM] Error in message handler:', error);
+      console.error('Error stack:', error instanceof Error ? error.stack : error);
     }
+  });
+  
+  // Also listen for text messages specifically
+  bot.on('text', async (msg) => {
+    console.log(`📝 [TELEGRAM] Text message event received: "${msg.text}"`);
   });
 
   // Set up error handler
   bot.on('error', (error: any) => {
-    const errorCode = error.code || error.response?.statusCode;
-    const errorMessage = error.message || String(error);
+    const errorCode = error.code || error.response?.statusCode || (error.response?.data?.error_code);
+    let errorMessage = error.message || error.description || String(error);
+    
+    // Clean up error message - remove any duplicate prefixes
+    if (typeof errorMessage === 'string') {
+      errorMessage = errorMessage.replace(/\[TELEGRAM\]\s*/g, '').trim();
+    }
     
     // Don't log timeout errors as critical - they're network issues
-    if (errorCode === 'ETIMEDOUT' || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('timeout')) {
+    const isTimeout = errorCode === 'ETIMEDOUT' || 
+                      errorMessage.includes('ETIMEDOUT') || 
+                      errorMessage.includes('timeout');
+    
+    if (isTimeout) {
       console.warn(`⚠️ [TELEGRAM] Connection timeout (will retry): ${errorMessage}`);
       return;
     }
@@ -364,11 +420,29 @@ async function startBot(botSettings: any) {
 
   // Set up polling error handler (specific to polling errors)
   bot.on('polling_error', (error: any) => {
-    const errorCode = error.code || error.response?.statusCode;
-    const errorMessage = error.message || String(error);
+    // Extract error information more carefully
+    const errorCode = error.code || error.response?.statusCode || (error.response?.data?.error_code);
+    let errorMessage = error.message || error.description || String(error);
+    
+    // Clean up error message - remove any duplicate prefixes or formatting
+    if (typeof errorMessage === 'string') {
+      // Remove duplicate [TELEGRAM] prefixes if present
+      errorMessage = errorMessage.replace(/\[TELEGRAM\]\s*/g, '').trim();
+      // Extract just the core error message
+      if (errorMessage.includes('EFATAL:')) {
+        errorMessage = errorMessage.split('EFATAL:').pop()?.trim() || errorMessage;
+      }
+    }
     
     // Handle timeout errors gracefully
-    if (errorCode === 'EFATAL' && (errorMessage.includes('ETIMEDOUT') || errorMessage.includes('timeout'))) {
+    const isTimeout = errorCode === 'EFATAL' || 
+                      errorCode === 'ETIMEDOUT' || 
+                      errorMessage.includes('ETIMEDOUT') || 
+                      errorMessage.includes('timeout') ||
+                      errorMessage.includes('ETIMEDOUT');
+    
+    if (isTimeout) {
+      // Only log timeout errors at warning level, not as critical errors
       console.warn(`⚠️ [TELEGRAM] Polling timeout (will retry automatically): ${errorMessage}`);
       // The library will automatically retry, so we don't need to do anything
       return;
@@ -382,7 +456,7 @@ async function startBot(botSettings: any) {
     });
     
     // For non-timeout errors, try to restart polling after a delay
-    if (errorCode !== 'ETIMEDOUT' && !errorMessage.includes('ETIMEDOUT')) {
+    if (!isTimeout) {
       setTimeout(async () => {
         try {
           console.log(`🔄 [TELEGRAM] Attempting to restart polling for bot: ${botSettings.botId}`);
@@ -397,25 +471,48 @@ async function startBot(botSettings: any) {
     }
   });
 
-  // Start polling with better error handling
+  // Start polling with better error handling and verification
   try {
+    console.log(`🔄 [TELEGRAM] Starting polling for bot: ${botSettings.botId} (${botSettings.name})...`);
     await bot.startPolling();
-    console.log(`✅ Bot ${botSettings.name} is now polling for messages`);
+    console.log(`✅ [TELEGRAM] Bot ${botSettings.name} is now polling for messages`);
+    
+    // Verify bot is working by getting bot info
+    try {
+      const botInfo = await bot.getMe();
+      console.log(`✅ [TELEGRAM] Bot verified: @${botInfo.username} (${botInfo.id})`);
+    } catch (infoError) {
+      console.warn(`⚠️ [TELEGRAM] Could not verify bot info:`, infoError);
+    }
   } catch (error: any) {
     const errorMessage = error.message || String(error);
+    console.error(`❌ [TELEGRAM] Failed to start polling for bot ${botSettings.botId}:`, error);
+    console.error(`   Error message: ${errorMessage}`);
+    console.error(`   Error code: ${error.code || 'N/A'}`);
+    
     if (errorMessage.includes('ETIMEDOUT') || errorMessage.includes('timeout')) {
-      console.warn(`⚠️ [TELEGRAM] Initial polling timeout (will retry): ${errorMessage}`);
+      console.warn(`⚠️ [TELEGRAM] Initial polling timeout (will retry in 5 seconds)...`);
       // Retry after delay
       setTimeout(async () => {
         try {
+          console.log(`🔄 [TELEGRAM] Retrying to start polling for bot: ${botSettings.botId}...`);
           await bot.startPolling();
-          console.log(`✅ Bot ${botSettings.name} polling started after retry`);
+          console.log(`✅ [TELEGRAM] Bot ${botSettings.name} polling started after retry`);
         } catch (retryError) {
           console.error(`❌ [TELEGRAM] Failed to start polling after retry:`, retryError);
         }
       }, 5000);
     } else {
-      console.error('❌ [TELEGRAM] Failed to start polling:', error);
+      // For other errors, still try to retry once
+      setTimeout(async () => {
+        try {
+          console.log(`🔄 [TELEGRAM] Retrying to start polling (second attempt)...`);
+          await bot.startPolling();
+          console.log(`✅ [TELEGRAM] Bot ${botSettings.name} polling started after second retry`);
+        } catch (retryError) {
+          console.error(`❌ [TELEGRAM] Failed to start polling after second retry:`, retryError);
+        }
+      }, 10000);
     }
   }
 
