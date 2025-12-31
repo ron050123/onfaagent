@@ -315,13 +315,22 @@ async function startBot(botSettings: any) {
   console.log(`🚀 Starting bot: ${botSettings.name} (${botSettings.botId})`);
 
   // Create bot instance with polling enabled
+  // Increased timeout and better error handling for network issues
   const bot = new TelegramBot(token, {
     polling: {
       interval: POLLING_INTERVAL,
       autoStart: false,
       params: {
-        timeout: 10,
+        timeout: 30, // Increased from 10 to 30 seconds for better reliability
       }
+    },
+    // Add request options for better timeout handling
+    request: {
+      agentOptions: {
+        keepAlive: true,
+        keepAliveMsecs: 30000,
+      },
+      timeout: 30000, // 30 seconds timeout
     }
   });
 
@@ -335,14 +344,80 @@ async function startBot(botSettings: any) {
   });
 
   // Set up error handler
-  bot.on('error', (error) => {
-    console.error('❌ Bot error:', error);
+  bot.on('error', (error: any) => {
+    const errorCode = error.code || error.response?.statusCode;
+    const errorMessage = error.message || String(error);
+    
+    // Don't log timeout errors as critical - they're network issues
+    if (errorCode === 'ETIMEDOUT' || errorMessage.includes('ETIMEDOUT') || errorMessage.includes('timeout')) {
+      console.warn(`⚠️ [TELEGRAM] Connection timeout (will retry): ${errorMessage}`);
+      return;
+    }
+    
+    // Log other errors
+    console.error('❌ [TELEGRAM] Bot error:', {
+      code: errorCode,
+      message: errorMessage,
+      botId: botSettings.botId
+    });
   });
 
-  // Start polling
-  bot.startPolling().catch((error) => {
-    console.error('❌ Failed to start polling:', error);
+  // Set up polling error handler (specific to polling errors)
+  bot.on('polling_error', (error: any) => {
+    const errorCode = error.code || error.response?.statusCode;
+    const errorMessage = error.message || String(error);
+    
+    // Handle timeout errors gracefully
+    if (errorCode === 'EFATAL' && (errorMessage.includes('ETIMEDOUT') || errorMessage.includes('timeout'))) {
+      console.warn(`⚠️ [TELEGRAM] Polling timeout (will retry automatically): ${errorMessage}`);
+      // The library will automatically retry, so we don't need to do anything
+      return;
+    }
+    
+    // Log other polling errors
+    console.error('❌ [TELEGRAM] Polling error:', {
+      code: errorCode,
+      message: errorMessage,
+      botId: botSettings.botId
+    });
+    
+    // For non-timeout errors, try to restart polling after a delay
+    if (errorCode !== 'ETIMEDOUT' && !errorMessage.includes('ETIMEDOUT')) {
+      setTimeout(async () => {
+        try {
+          console.log(`🔄 [TELEGRAM] Attempting to restart polling for bot: ${botSettings.botId}`);
+          await bot.stopPolling();
+          await new Promise(resolve => setTimeout(resolve, 2000)); // Wait 2 seconds
+          await bot.startPolling();
+          console.log(`✅ [TELEGRAM] Polling restarted for bot: ${botSettings.botId}`);
+        } catch (restartError) {
+          console.error(`❌ [TELEGRAM] Failed to restart polling:`, restartError);
+        }
+      }, 10000); // Retry after 10 seconds
+    }
   });
+
+  // Start polling with better error handling
+  try {
+    await bot.startPolling();
+    console.log(`✅ Bot ${botSettings.name} is now polling for messages`);
+  } catch (error: any) {
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('ETIMEDOUT') || errorMessage.includes('timeout')) {
+      console.warn(`⚠️ [TELEGRAM] Initial polling timeout (will retry): ${errorMessage}`);
+      // Retry after delay
+      setTimeout(async () => {
+        try {
+          await bot.startPolling();
+          console.log(`✅ Bot ${botSettings.name} polling started after retry`);
+        } catch (retryError) {
+          console.error(`❌ [TELEGRAM] Failed to start polling after retry:`, retryError);
+        }
+      }, 5000);
+    } else {
+      console.error('❌ [TELEGRAM] Failed to start polling:', error);
+    }
+  }
 
   botInstances.set(token, bot);
   console.log(`✅ Bot ${botSettings.name} is now polling for messages`);
