@@ -197,12 +197,17 @@ async function handleMessage(bot: TelegramBot, botSettings: any, message: Telegr
   let text = message.text || '';
   const userId = message.from?.id.toString();
 
-  console.log(`🤖 [TELEGRAM] Processing message for bot ${botSettings.botId}:`, {
+  console.log(`🤖 [TELEGRAM] [${new Date().toISOString()}] Processing message for bot ${botSettings.botId}:`, {
     chatId,
     text: text.substring(0, 100),
+    textLength: text.length,
     chatType: message.chat.type,
-    from: message.from?.username || message.from?.id
+    from: message.from?.username || message.from?.id,
+    messageId: message.message_id
   });
+  
+  // Ensure we always log when entering this function
+  console.log(`📍 [TELEGRAM] handleMessage function called - botId: ${botSettings.botId}, chatId: ${chatId}, hasText: ${!!text}`);
 
   // Handle /start command
   if (text === '/start') {
@@ -273,16 +278,24 @@ async function handleMessage(bot: TelegramBot, botSettings: any, message: Telegr
     console.log(`✅ [TELEGRAM] AI reply generated (${reply.length} chars): "${reply.substring(0, 100)}..."`);
 
     // Send reply with retry
+    console.log(`📤 [TELEGRAM] [${new Date().toISOString()}] Attempting to send reply (${reply.length} chars) to chatId: ${chatId}`);
     try {
-      await sendMessage(bot, chatId, reply);
-      console.log('✅ [TELEGRAM] Reply sent successfully');
+      const sentMessage = await sendMessage(bot, chatId, reply);
+      console.log(`✅ [TELEGRAM] [${new Date().toISOString()}] Reply sent successfully! Message ID: ${sentMessage.message_id}, chatId: ${chatId}`);
     } catch (sendError: any) {
-      console.error('❌ [TELEGRAM] Error sending reply:', sendError);
+      console.error(`❌ [TELEGRAM] [${new Date().toISOString()}] Error sending reply to chatId ${chatId}:`, sendError);
+      console.error(`   Error type: ${sendError.constructor?.name || typeof sendError}`);
+      console.error(`   Error message: ${sendError.message || String(sendError)}`);
+      console.error(`   Error code: ${sendError.code || 'N/A'}`);
       // Try to send a simpler error message
       try {
-        await bot.sendMessage(chatId, 'Xin lỗi, tôi gặp sự cố khi gửi phản hồi. Vui lòng thử lại sau.');
-      } catch (fallbackError) {
-        console.error('❌ [TELEGRAM] Failed to send fallback message:', fallbackError);
+        console.log(`🔄 [TELEGRAM] Attempting to send fallback error message...`);
+        const fallbackMsg = await bot.sendMessage(chatId, 'Xin lỗi, tôi gặp sự cố khi gửi phản hồi. Vui lòng thử lại sau.');
+        console.log(`✅ [TELEGRAM] Fallback message sent: ${fallbackMsg.message_id}`);
+      } catch (fallbackError: any) {
+        console.error(`❌ [TELEGRAM] Failed to send fallback message:`, fallbackError);
+        console.error(`   Fallback error type: ${fallbackError.constructor?.name || typeof fallbackError}`);
+        console.error(`   Fallback error message: ${fallbackError.message || String(fallbackError)}`);
       }
       throw sendError; // Re-throw to be caught by outer catch
     }
@@ -370,25 +383,51 @@ async function startBot(botSettings: any) {
 
   // Set up message handler with better logging
   bot.on('message', async (msg) => {
+    const timestamp = new Date().toISOString();
     try {
-      console.log(`📨 [TELEGRAM] Message received for bot ${botSettings.botId}:`, {
+      console.log(`📨 [TELEGRAM] [${timestamp}] Message received for bot ${botSettings.botId}:`, {
         chatId: msg.chat.id,
         chatType: msg.chat.type,
-        text: msg.text,
+        text: msg.text || '(no text)',
         from: msg.from?.username || msg.from?.id,
-        messageId: msg.message_id
+        messageId: msg.message_id,
+        hasText: !!msg.text
       });
+      
+      // Log immediately that we're processing
+      console.log(`🔄 [TELEGRAM] [${timestamp}] Starting to process message...`);
+      
       await handleMessage(bot, botSettings, msg);
+      
+      console.log(`✅ [TELEGRAM] [${timestamp}] Message processing completed`);
     } catch (error) {
-      console.error('❌ [TELEGRAM] Error in message handler:', error);
-      console.error('Error stack:', error instanceof Error ? error.stack : error);
+      console.error(`❌ [TELEGRAM] [${timestamp}] Error in message handler:`, error);
+      console.error('   Error type:', error instanceof Error ? error.constructor.name : typeof error);
+      console.error('   Error message:', error instanceof Error ? error.message : String(error));
+      console.error('   Error stack:', error instanceof Error ? error.stack : 'No stack trace');
+      
+      // Try to send error notification to user
+      try {
+        await bot.sendMessage(msg.chat.id, 'Xin lỗi, tôi gặp lỗi khi xử lý tin nhắn của bạn. Vui lòng thử lại sau.');
+        console.log(`✅ [TELEGRAM] Error notification sent to user`);
+      } catch (sendError) {
+        console.error(`❌ [TELEGRAM] Could not send error notification:`, sendError);
+      }
     }
   });
   
   // Also listen for text messages specifically
   bot.on('text', async (msg) => {
-    console.log(`📝 [TELEGRAM] Text message event received: "${msg.text}"`);
+    console.log(`📝 [TELEGRAM] Text message event received: "${msg.text}" (chatId: ${msg.chat.id})`);
   });
+  
+  // Listen for all updates to see what's happening
+  bot.on('polling_error', (error) => {
+    console.error(`❌ [TELEGRAM] Polling error detected:`, error);
+  });
+  
+  // Log when bot is ready
+  console.log(`✅ [TELEGRAM] Event handlers registered for bot ${botSettings.botId}`);
 
   // Set up error handler
   bot.on('error', (error: any) => {
