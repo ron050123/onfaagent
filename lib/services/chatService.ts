@@ -75,23 +75,25 @@ export function buildKnowledgeBase(botSettings: IBotSettings, maxLength?: number
   }
 
   let knowledgeBase = '';
-  // Increased limits for better knowledge coverage
-  const MAX_DOC_LENGTH = maxLength ? Math.min(5000, maxLength / 4) : 5000; // Max chars per document (increased)
-  const MAX_URL_LENGTH = maxLength ? Math.min(3000, maxLength / 5) : 3000; // Max chars per URL (increased)
-  const MAX_STRUCTURED_LENGTH = maxLength ? Math.min(2000, maxLength / 6) : 2000; // Max chars per structured data (increased)
-  const MAX_FAQS_LENGTH = maxLength ? Math.min(8000, maxLength / 2) : 8000; // Max chars for FAQs (increased)
+  // Optimized limits for faster processing while maintaining quality
+  // FAQs are ALWAYS included in full - no truncation or limits
+  const MAX_DOC_LENGTH = maxLength ? Math.min(3000, maxLength / 5) : 3000; // Max chars per document (reduced for speed)
+  const MAX_URL_LENGTH = maxLength ? Math.min(2000, maxLength / 6) : 2000; // Max chars per URL (reduced for speed)
+  const MAX_STRUCTURED_LENGTH = maxLength ? Math.min(1500, maxLength / 8) : 1500; // Max chars per structured data (reduced)
+  const MAX_DOCS_COUNT = maxLength ? (maxLength < 10000 ? 5 : 10) : 10; // Limit number of documents
+  const MAX_URLS_COUNT = maxLength ? (maxLength < 10000 ? 5 : 10) : 10; // Limit number of URLs
+  const MAX_STRUCTURED_COUNT = maxLength ? (maxLength < 10000 ? 5 : 10) : 10; // Limit number of structured data
 
-  // Add FAQs - Limit total length for performance
+  // Add FAQs - ALWAYS include FULL content, never truncate
+  // FAQs are prioritized and must be complete for accurate responses
   if (botSettings.faqs.length > 0) {
-    let faqsText = botSettings.faqs.join('\n\n');
-    if (faqsText.length > MAX_FAQS_LENGTH) {
-      faqsText = faqsText.substring(0, MAX_FAQS_LENGTH) + '...[FAQs truncated]';
-    }
+    const faqsText = botSettings.faqs.join('\n\n'); // Join all FAQs with double newline
     knowledgeBase += 'FAQs:\n' + faqsText + '\n\n';
+    console.log(`📋 FAQs included: ${botSettings.faqs.length} Q&A pairs, ${faqsText.length} characters (FULL content, no truncation)`);
   }
 
-  // Add enabled documents - Load ALL enabled documents (no limit)
-  const enabledDocuments = (botSettings.documents?.filter((doc: any) => doc.enabled) || []);
+  // Add enabled documents - Limit count for faster processing
+  const enabledDocuments = (botSettings.documents?.filter((doc: any) => doc.enabled) || []).slice(0, MAX_DOCS_COUNT);
   if (enabledDocuments.length > 0) {
     knowledgeBase += 'Document Knowledge Base:\n';
     enabledDocuments.forEach((doc: any) => {
@@ -101,11 +103,14 @@ export function buildKnowledgeBase(botSettings: IBotSettings, maxLength?: number
       knowledgeBase += `\n--- ${doc.name} (${doc.type.toUpperCase()}) ---\n`;
       knowledgeBase += content + '\n';
     });
+    if ((botSettings.documents?.filter((doc: any) => doc.enabled) || []).length > MAX_DOCS_COUNT) {
+      knowledgeBase += `\n[Note: ${(botSettings.documents?.filter((doc: any) => doc.enabled) || []).length - MAX_DOCS_COUNT} more documents available but not included for performance]\n`;
+    }
     knowledgeBase += '\n';
   }
 
-  // Add enabled URLs - Load ALL enabled URLs (no limit)
-  const enabledUrls = (botSettings.urls?.filter((url: any) => url.enabled) || []);
+  // Add enabled URLs - Limit count for faster processing
+  const enabledUrls = (botSettings.urls?.filter((url: any) => url.enabled) || []).slice(0, MAX_URLS_COUNT);
   if (enabledUrls.length > 0) {
     knowledgeBase += 'Web Content Knowledge Base:\n';
     enabledUrls.forEach((url: any) => {
@@ -115,11 +120,14 @@ export function buildKnowledgeBase(botSettings: IBotSettings, maxLength?: number
       knowledgeBase += `\n--- ${url.title} (${url.url}) ---\n`;
       knowledgeBase += content + '\n';
     });
+    if ((botSettings.urls?.filter((url: any) => url.enabled) || []).length > MAX_URLS_COUNT) {
+      knowledgeBase += `\n[Note: ${(botSettings.urls?.filter((url: any) => url.enabled) || []).length - MAX_URLS_COUNT} more URLs available but not included for performance]\n`;
+    }
     knowledgeBase += '\n';
   }
 
-  // Add enabled structured data - Load ALL enabled structured data (no limit)
-  const enabledStructuredData = (botSettings.structuredData?.filter((data: any) => data.enabled) || []);
+  // Add enabled structured data - Limit count for faster processing
+  const enabledStructuredData = (botSettings.structuredData?.filter((data: any) => data.enabled) || []).slice(0, MAX_STRUCTURED_COUNT);
   if (enabledStructuredData.length > 0) {
     knowledgeBase += 'Structured Data Knowledge Base:\n';
     enabledStructuredData.forEach((data: any) => {
@@ -130,6 +138,9 @@ export function buildKnowledgeBase(botSettings: IBotSettings, maxLength?: number
       knowledgeBase += `\n--- ${data.name} (${data.type}) ---\n`;
       knowledgeBase += truncatedData + '\n';
     });
+    if ((botSettings.structuredData?.filter((data: any) => data.enabled) || []).length > MAX_STRUCTURED_COUNT) {
+      knowledgeBase += `\n[Note: ${(botSettings.structuredData?.filter((data: any) => data.enabled) || []).length - MAX_STRUCTURED_COUNT} more structured data items available but not included for performance]\n`;
+    }
     knowledgeBase += '\n';
   }
 
@@ -162,13 +173,28 @@ export function buildKnowledgeBase(botSettings: IBotSettings, maxLength?: number
 
 /**
  * Intelligently truncate knowledge base while preserving structure
+ * IMPORTANT: FAQs section is ALWAYS preserved in full, never truncated
  */
 function truncateKnowledgeBase(kb: string, maxLength: number): string {
   if (kb.length <= maxLength) return kb;
   
-  // Try to truncate at section boundaries
-  const sections = kb.split(/\n---/);
-  let result = '';
+  // Extract FAQs section first - it must be preserved in full
+  const faqsMatch = kb.match(/FAQs:\n([\s\S]*?)(?=\n\n(?:Document|Web Content|Structured Data) Knowledge Base:|$)/);
+  const faqsSection = faqsMatch ? `FAQs:\n${faqsMatch[1]}\n\n` : '';
+  const kbWithoutFaqs = kb.replace(/FAQs:\n[\s\S]*?\n\n/, '');
+  
+  // Calculate available space for other sections (reserve space for FAQs)
+  const availableLength = maxLength - faqsSection.length - 200; // Reserve 200 chars for separators and notes
+  
+  if (availableLength <= 0) {
+    // If FAQs alone exceed maxLength, return FAQs only (they're most important)
+    console.warn('⚠️ FAQs section alone exceeds maxLength, returning FAQs only');
+    return faqsSection + '\n\n[Note: Other knowledge base sections truncated due to size limits, but FAQs are complete]';
+  }
+  
+  // Truncate other sections (documents, URLs, structured data) intelligently
+  const sections = kbWithoutFaqs.split(/\n---/);
+  let result = faqsSection; // Start with FAQs
   
   for (const section of sections) {
     if (result.length + section.length + 10 > maxLength) {
@@ -179,10 +205,10 @@ function truncateKnowledgeBase(kb: string, maxLength: number): string {
       }
       break;
     }
-    result += (result ? '\n---' : '') + section;
+    result += (result && !result.endsWith('\n\n') ? '\n---' : '') + section;
   }
   
-  return result + '\n\n[Knowledge base truncated for performance - full content available in cache]';
+  return result + '\n\n[Note: FAQs section is complete. Other sections may be truncated for performance]';
 }
 
 // Reusable OpenAI client instances per API key for connection reuse
@@ -198,7 +224,7 @@ function getOpenAIClient(apiKey: string): OpenAI {
 
   const client = new OpenAI({
     apiKey: apiKey,
-    timeout: 25000, // 25 second timeout - reduced for faster failure detection
+    timeout: 15000, // 15 second timeout - faster failure detection
     maxRetries: 1, // Reduced retries for faster response
     // Enable HTTP keep-alive for connection reuse
     httpAgent: undefined, // Let the library handle it
@@ -335,8 +361,9 @@ export async function processChatMessage(
 
   // Try with optimized knowledge base first
   try {
-    // Use larger knowledge base for Telegram, WhatsApp, and Discord to include more documents (max 20000 chars)
-    const maxKbLength = (platform === 'telegram' || platform === 'whatsapp' || platform === 'discord') ? 20000 : undefined;
+    // Use optimized knowledge base size for faster response
+    // Reduced from 20000 to 12000 for Telegram/WhatsApp/Discord to improve speed
+    const maxKbLength = (platform === 'telegram' || platform === 'whatsapp' || platform === 'discord') ? 12000 : 8000;
     const systemPrompt = generateSystemPrompt(botSettings, platform, maxKbLength);
     
     const completion = await Promise.race([
@@ -346,16 +373,16 @@ export async function processChatMessage(
           { role: 'system', content: systemPrompt },
           { role: 'user', content: message }
         ],
-        max_tokens: 600, // Balanced length - informative but not too verbose
+        max_tokens: 500, // Reduced from 600 to 500 for faster generation
         temperature: 0.7,
         stream: false,
         top_p: 0.9,
         frequency_penalty: 0,
         presence_penalty: 0,
       }),
-      // Reduced timeout - 20 seconds for faster failure detection
+      // Reduced timeout - 15 seconds for faster failure detection
       new Promise<never>((_, reject) => 
-        setTimeout(() => reject(new Error('OpenAI API timeout after 20 seconds')), 20000)
+        setTimeout(() => reject(new Error('OpenAI API timeout after 15 seconds')), 15000)
       )
     ]);
 
@@ -369,8 +396,8 @@ export async function processChatMessage(
       console.warn('⚠️ Timeout with full knowledge base, trying with reduced content...');
       
       try {
-        // Try with reduced knowledge base (max 10000 chars) if timeout
-        const reducedPrompt = generateSystemPrompt(botSettings, platform, 10000);
+        // Try with reduced knowledge base (max 6000 chars) if timeout - faster fallback
+        const reducedPrompt = generateSystemPrompt(botSettings, platform, 6000);
         
         const completion = await Promise.race([
           openai.chat.completions.create({
@@ -379,16 +406,16 @@ export async function processChatMessage(
               { role: 'system', content: reducedPrompt },
               { role: 'user', content: message }
             ],
-            max_tokens: 500, // Balanced fallback responses
+            max_tokens: 400, // Reduced for faster fallback responses
             temperature: 0.7,
             stream: false,
             top_p: 0.9,
             frequency_penalty: 0,
             presence_penalty: 0,
           }),
-          // Longer timeout for fallback - 25 seconds
+          // Reduced timeout for fallback - 15 seconds
           new Promise<never>((_, reject) => 
-            setTimeout(() => reject(new Error('OpenAI API timeout after 25 seconds')), 25000)
+            setTimeout(() => reject(new Error('OpenAI API timeout after 15 seconds')), 15000)
           )
         ]);
 
