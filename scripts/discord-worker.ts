@@ -42,6 +42,9 @@ const workerBotSettings = botSettingsCache;
 // Store active Discord bot instances
 const botInstances = new Map<string, Client>();
 
+// Track rate limit errors to avoid retrying too soon
+const rateLimitErrors = new Map<string, { resetAt: Date; retryCount: number }>();
+
 /**
  * Connect to MongoDB
  */
@@ -490,6 +493,14 @@ async function startBot(botId: string) {
     console.log(`[DISCORD] 🔄 Shard ${id} is reconnecting`);
   });
 
+  // Check if we're currently rate limited
+  const rateLimitInfo = rateLimitErrors.get(botId);
+  if (rateLimitInfo && rateLimitInfo.resetAt > new Date()) {
+    const waitTime = Math.ceil((rateLimitInfo.resetAt.getTime() - Date.now()) / 1000);
+    console.log(`[DISCORD] ⏳ Bot ${botId} is rate limited. Will retry in ${waitTime} seconds (reset at ${rateLimitInfo.resetAt.toISOString()})`);
+    return null;
+  }
+
   // Login AFTER registering all event handlers
   try {
     console.log(`[DISCORD] 🔐 Logging in with bot token...`);
@@ -510,6 +521,9 @@ async function startBot(botId: string) {
       console.log(`[DISCORD] ⚠️ Bot logged in but not ready yet`);
     }
     
+    // Clear rate limit error on success
+    rateLimitErrors.delete(botId);
+    
     botInstances.set(botId, client);
     console.log(`[DISCORD] ✅ Discord bot started successfully for: ${botId}`);
     console.log(`[DISCORD] 👂 Bot is now listening for messages...`);
@@ -518,6 +532,39 @@ async function startBot(botId: string) {
     return client;
   } catch (error: any) {
     console.error(`[DISCORD] ❌ Error logging in Discord bot for ${botId}:`, error);
+    
+    // Check if it's a rate limit error
+    const errorMessage = error.message || String(error);
+    if (errorMessage.includes('sessions remaining') || errorMessage.includes('Not enough sessions')) {
+      // Extract reset time from error message if available
+      const resetMatch = errorMessage.match(/resets at ([^\s]+)/i);
+      let resetAt: Date;
+      
+      if (resetMatch) {
+        resetAt = new Date(resetMatch[1]);
+      } else {
+        // Default to 20 minutes from now if we can't parse the reset time
+        resetAt = new Date(Date.now() + 20 * 60 * 1000);
+      }
+      
+      const retryCount = (rateLimitErrors.get(botId)?.retryCount || 0) + 1;
+      rateLimitErrors.set(botId, { resetAt, retryCount });
+      
+      const waitTime = Math.ceil((resetAt.getTime() - Date.now()) / 1000);
+      console.error(`[DISCORD] 🚫 Rate limit detected for bot ${botId}. Reset at: ${resetAt.toISOString()}`);
+      console.error(`[DISCORD] ⏳ Will retry in ${waitTime} seconds (${Math.ceil(waitTime / 60)} minutes)`);
+      console.error(`[DISCORD] 🔄 Retry count: ${retryCount}`);
+      
+      // Clean up client if it was created
+      try {
+        if (!client.isReady()) {
+          await client.destroy();
+        }
+      } catch (destroyError) {
+        // Ignore destroy errors
+      }
+    }
+    
     return null;
   }
 }
@@ -569,6 +616,14 @@ async function main() {
         // Start new bots or reload if settings changed
         for (const bot of enabledBots) {
           if (!botInstances.has(bot.botId)) {
+            // Check if bot is rate limited before starting
+            const rateLimitInfo = rateLimitErrors.get(bot.botId);
+            if (rateLimitInfo && rateLimitInfo.resetAt > new Date()) {
+              const waitTime = Math.ceil((rateLimitInfo.resetAt.getTime() - Date.now()) / 1000);
+              console.log(`[DISCORD] ⏳ Skipping bot ${bot.botId} - rate limited. Retry in ${waitTime}s`);
+              continue;
+            }
+            
             console.log(`[DISCORD] 🔄 Starting new Discord bot: ${bot.botId}`);
             await startBot(bot.botId);
           } else {
@@ -578,6 +633,14 @@ async function main() {
             const cacheUpdatedAt = cached?.settings?.updatedAt ? new Date(cached.settings.updatedAt).getTime() : 0;
             
             if (dbUpdatedAt > cacheUpdatedAt) {
+              // Check if bot is rate limited before restarting
+              const rateLimitInfo = rateLimitErrors.get(bot.botId);
+              if (rateLimitInfo && rateLimitInfo.resetAt > new Date()) {
+                const waitTime = Math.ceil((rateLimitInfo.resetAt.getTime() - Date.now()) / 1000);
+                console.log(`[DISCORD] ⏳ Skipping restart for bot ${bot.botId} - rate limited. Retry in ${waitTime}s`);
+                continue;
+              }
+              
               console.log(`[DISCORD] 🔄 Bot settings updated for ${bot.botId}, reloading...`);
               console.log(`[DISCORD]    Cache: ${new Date(cacheUpdatedAt).toISOString()}, DB: ${new Date(dbUpdatedAt).toISOString()}`);
               
@@ -587,10 +650,21 @@ async function main() {
               // Restart bot to load new settings
               const client = botInstances.get(bot.botId);
               if (client) {
-                console.log(`[DISCORD] 🔄 Restarting bot ${bot.botId} to load new settings...`);
-                await client.destroy();
-                botInstances.delete(bot.botId);
-                await startBot(bot.botId);
+                // Only restart if bot is actually ready (to avoid unnecessary restarts)
+                if (client.isReady()) {
+                  console.log(`[DISCORD] 🔄 Restarting bot ${bot.botId} to load new settings...`);
+                  try {
+                    await client.destroy();
+                  } catch (destroyError) {
+                    console.error(`[DISCORD] ⚠️ Error destroying client:`, destroyError);
+                  }
+                  botInstances.delete(bot.botId);
+                  // Add small delay before restarting to avoid immediate retry
+                  await new Promise(resolve => setTimeout(resolve, 2000));
+                  await startBot(bot.botId);
+                } else {
+                  console.log(`[DISCORD] ⏳ Bot ${bot.botId} is not ready yet, skipping restart`);
+                }
               }
             }
           }

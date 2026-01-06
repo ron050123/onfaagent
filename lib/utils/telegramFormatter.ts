@@ -30,59 +30,97 @@ export function formatTelegramMessage(text: string): string {
   const processedLines: string[] = [];
   
   lines.forEach((line) => {
-    // Check for numbered list items (1. 2. 3.)
-    const numberedMatch = line.match(/^(\d+)\.\s+(.+)$/);
+    let processedLine = line;
     
+    // Step 1: Process numbered lists (1. 2. 3.)
+    const numberedMatch = processedLine.match(/^(\d+)\.\s+(.+)$/);
     if (numberedMatch) {
-      // Format as bold number + content
       const num = numberedMatch[1];
       const content = numberedMatch[2];
-      processedLines.push(`<b>${num}.</b> ${escapeHtml(content)}`);
-    } else {
-      // Check for bullet points (- or •)
-      const bulletMatch = line.match(/^[-•]\s+(.+)$/);
+      // Process markdown in content first
+      let processedContent = content;
       
-      if (bulletMatch) {
-        // Format with bullet emoji
-        processedLines.push(`• ${escapeHtml(bulletMatch[1])}`);
-      } else {
-        // Regular line - convert markdown formatting first, then escape HTML
-        let processedLine = line;
-        
-        // Convert markdown bold **text** to HTML <b>text</b>
-        processedLine = processedLine.replace(/\*\*(.*?)\*\*/g, (match, content) => {
-          return `<b>${escapeHtml(content)}</b>`;
-        });
-        
-        // Convert markdown code `code` to HTML <code>code</code>
-        processedLine = processedLine.replace(/`([^`]+)`/g, (match, content) => {
-          return `<code>${escapeHtml(content)}</code>`;
-        });
-        
-        // Convert markdown underline __text__ to HTML <u>text</u> (only if not already bold)
-        processedLine = processedLine.replace(/__(.*?)__/g, (match, content) => {
-          // Skip if already inside <b> tag
-          if (match.includes('<b>')) return match;
-          return `<u>${escapeHtml(content)}</u>`;
-        });
-        
-        // Escape any remaining HTML characters (< > &) that aren't part of our HTML tags
-        // Simple approach: escape all, then restore our tags
-        processedLine = processedLine
-          .replace(/&/g, '&amp;')
-          .replace(/</g, '&lt;')
-          .replace(/>/g, '&gt;')
-          // Restore our HTML tags
-          .replace(/&lt;b&gt;/g, '<b>')
-          .replace(/&lt;\/b&gt;/g, '</b>')
-          .replace(/&lt;u&gt;/g, '<u>')
-          .replace(/&lt;\/u&gt;/g, '</u>')
-          .replace(/&lt;code&gt;/g, '<code>')
-          .replace(/&lt;\/code&gt;/g, '</code>');
-        
-        processedLines.push(processedLine);
-      }
+      // Convert markdown bold **text** to placeholder
+      processedContent = processedContent.replace(/\*\*(.*?)\*\*/g, '__BOLD__$1__BOLD__');
+      
+      // Convert markdown code `code` to placeholder
+      processedContent = processedContent.replace(/`([^`]+)`/g, '__CODE__$1__CODE__');
+      
+      // Escape HTML
+      processedContent = escapeHtml(processedContent);
+      
+      // Replace placeholders with HTML tags (need to handle opening and closing)
+      let boldCount = 0;
+      processedContent = processedContent.replace(/__BOLD__/g, () => {
+        boldCount++;
+        return boldCount % 2 === 1 ? '<b>' : '</b>';
+      });
+      
+      let codeCount = 0;
+      processedContent = processedContent.replace(/__CODE__/g, () => {
+        codeCount++;
+        return codeCount % 2 === 1 ? '<code>' : '</code>';
+      });
+      
+      processedLines.push(`<b>${num}.</b> ${processedContent}`);
+      return;
     }
+    
+    // Step 2: Process bullet points (- or •)
+    const bulletMatch = processedLine.match(/^[-•]\s+(.+)$/);
+    if (bulletMatch) {
+      let processedContent = bulletMatch[1];
+      
+      // Convert markdown bold **text** to placeholder
+      processedContent = processedContent.replace(/\*\*(.*?)\*\*/g, '__BOLD__$1__BOLD__');
+      
+      // Convert markdown code `code` to placeholder
+      processedContent = processedContent.replace(/`([^`]+)`/g, '__CODE__$1__CODE__');
+      
+      // Escape HTML
+      processedContent = escapeHtml(processedContent);
+      
+      // Replace placeholders with HTML tags (need to handle opening and closing)
+      let boldCount = 0;
+      processedContent = processedContent.replace(/__BOLD__/g, () => {
+        boldCount++;
+        return boldCount % 2 === 1 ? '<b>' : '</b>';
+      });
+      
+      let codeCount = 0;
+      processedContent = processedContent.replace(/__CODE__/g, () => {
+        codeCount++;
+        return codeCount % 2 === 1 ? '<code>' : '</code>';
+      });
+      
+      processedLines.push(`• ${processedContent}`);
+      return;
+    }
+    
+    // Step 3: Process regular lines with markdown
+    // Convert markdown code `code` FIRST (uses backticks, no conflict)
+    processedLine = processedLine.replace(/`([^`]+)`/g, '__CODE__$1__CODE__');
+    
+    // Convert markdown bold **text** to placeholder
+    processedLine = processedLine.replace(/\*\*(.*?)\*\*/g, '__BOLD__$1__BOLD__');
+    
+    // Escape HTML (this will escape our placeholders too)
+    processedLine = escapeHtml(processedLine);
+    
+    // Replace placeholders with HTML tags (need to handle opening and closing)
+    let boldCount = 0;
+    processedLine = processedLine.replace(/__BOLD__/g, () => {
+      boldCount++;
+      return boldCount % 2 === 1 ? '<b>' : '</b>';
+    });
+    
+    let codeCount = 0;
+    processedLine = processedLine.replace(/__CODE__/g, () => {
+      codeCount++;
+      return codeCount % 2 === 1 ? '<code>' : '</code>';
+    });
+    
+    processedLines.push(processedLine);
   });
 
   formatted = processedLines.join('\n');
@@ -98,4 +136,3 @@ export function formatTelegramMessage(text: string): string {
 
   return formatted;
 }
-
