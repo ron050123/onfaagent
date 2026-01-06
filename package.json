@@ -14,7 +14,13 @@
     "worker:telegram": "tsx scripts/telegram-worker.ts",
     "worker:whatsapp-web": "tsx scripts/whatsapp-web-worker.ts",
     "worker:discord": "tsx scripts/discord-worker.ts",
-    "worker:all": "concurrently \"npm run worker:telegram\" \"npm run worker:whatsapp-web\" \"npm run worker:discord\" --names \"TELEGRAM,WHATSAPP,DISCORD\" --prefix-colors \"blue,green,magenta\""
+    "worker:all": "concurrently \"npm run worker:telegram\" \"npm run worker:whatsapp-web\" \"npm run worker:discord\" --names \"TELEGRAM,WHATSAPP,DISCORD\" --prefix-colors \"blue,green,magenta\"",
+    "list-kb": "tsx scripts/list-knowledge-base.ts",
+    "delete-bot": "tsx scripts/delete-bot.ts",
+    "check-kb": "tsx scripts/check-knowledge-base-source.ts",
+    "inspect-bot": "tsx scripts/inspect-bot-content.ts",
+    "clear-cache": "tsx scripts/clear-cache.ts",
+    "clear-cache:all": "tsx scripts/clear-cache.ts --all"
   },
   "dependencies": {
     "@radix-ui/react-label": "^2.0.2",

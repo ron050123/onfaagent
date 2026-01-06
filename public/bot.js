@@ -474,6 +474,11 @@
       .replace(/</g, '&lt;')
       .replace(/>/g, '&gt;');
     
+    // Normalize multiple consecutive newlines (3+ newlines become 2, 2+ newlines become 1)
+    // This prevents excessive spacing while preserving intentional paragraph breaks
+    formatted = formatted.replace(/\n{3,}/g, '\n\n'); // 3+ newlines -> 2 newlines
+    formatted = formatted.replace(/\n{2}/g, '\n'); // 2 newlines -> 1 newline
+    
     // Process lists first (before converting newlines)
     // Split into lines to process lists
     const lines = formatted.split('\n');
@@ -502,7 +507,10 @@
         if (inList) {
           closeList();
         }
-        processedLines.push(line);
+        // Skip empty lines to reduce spacing
+        if (line.trim() !== '' || index === 0 || index === lines.length - 1) {
+          processedLines.push(line);
+        }
       }
     });
     
@@ -523,8 +531,11 @@
     // Code: `code`
     formatted = formatted.replace(/`([^`]+)`/g, '<code>$1</code>');
     
-    // Convert newlines to <br> (but preserve list structure)
+    // Convert single newlines to <br>, but avoid consecutive <br><br>
     formatted = formatted.replace(/\n/g, '<br>');
+    
+    // Remove consecutive <br> tags (more than 2 consecutive becomes just 2)
+    formatted = formatted.replace(/(<br>\s*){3,}/gi, '<br><br>');
     
     return formatted;
   }

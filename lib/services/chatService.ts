@@ -80,8 +80,8 @@ export function buildKnowledgeBase(botSettings: IBotSettings, maxLength?: number
   const MAX_DOC_LENGTH = maxLength ? Math.min(3000, maxLength / 5) : 3000; // Max chars per document (reduced for speed)
   const MAX_URL_LENGTH = maxLength ? Math.min(2000, maxLength / 6) : 2000; // Max chars per URL (reduced for speed)
   const MAX_STRUCTURED_LENGTH = maxLength ? Math.min(1500, maxLength / 8) : 1500; // Max chars per structured data (reduced)
-  const MAX_DOCS_COUNT = maxLength ? (maxLength < 10000 ? 5 : 10) : 10; // Limit number of documents
-  const MAX_URLS_COUNT = maxLength ? (maxLength < 10000 ? 5 : 10) : 10; // Limit number of URLs
+  const MAX_DOCS_COUNT = maxLength ? (maxLength < 10000 ? 10 : 20) : 20; // Limit number of documents (doubled)
+  const MAX_URLS_COUNT = maxLength ? (maxLength < 10000 ? 10 : 20) : 20; // Limit number of URLs (doubled)
   const MAX_STRUCTURED_COUNT = maxLength ? (maxLength < 10000 ? 5 : 10) : 10; // Limit number of structured data
 
   // Add FAQs - ALWAYS include FULL content, never truncate
@@ -260,15 +260,8 @@ export function generateSystemPrompt(botSettings: IBotSettings, platform?: strin
   console.log(`${platformTag}    Has URLs: ${knowledgeBase.includes('Web Content Knowledge Base:')}`);
   console.log(`${platformTag}    Has Structured Data: ${knowledgeBase.includes('Structured Data Knowledge Base:')}`);
   
-  const platformContext = platform === 'telegram' 
-    ? 'Provide informative answers with key details. Balance between being comprehensive and concise.'
-    : platform === 'whatsapp'
-    ? 'Provide informative answers with key details. Balance between being comprehensive and concise.'
-    : platform === 'discord'
-    ? 'Provide informative answers with key details. Balance between being comprehensive and concise.'
-    : platform === 'facebook' || platform === 'zalo'
-    ? 'Be friendly and engaging.'
-    : '';
+  // Unified platform context for all platforms to ensure consistent responses
+  const platformContext = 'Provide informative answers with key details and relevant information. Balance between being comprehensive and concise. Be helpful, friendly, and professional.';
 
   // Enhanced prompt structure for balanced responses
   const prompt = `You are ${botSettings.name}, a helpful and knowledgeable chatbot.
@@ -283,8 +276,6 @@ Instructions:
 - Be helpful and thorough while avoiding unnecessary verbosity
 - If the knowledge base contains information about the topic, provide a complete answer
 - Only say "I don't have that information" if the knowledge base truly doesn't contain relevant information
-- Be helpful, friendly, and professional
-- For Telegram/WhatsApp: Provide informative answers (3-6 sentences) with key details
 - ${platformContext}`;
   
   // Debug: Log prompt length with platform context
@@ -361,9 +352,9 @@ export async function processChatMessage(
 
   // Try with optimized knowledge base first
   try {
-    // Use optimized knowledge base size for faster response
-    // Reduced from 20000 to 12000 for Telegram/WhatsApp/Discord to improve speed
-    const maxKbLength = (platform === 'telegram' || platform === 'whatsapp' || platform === 'discord') ? 12000 : 8000;
+    // Use unified knowledge base size for all platforms to ensure consistent responses
+    // All platforms now use 12000 chars for consistency
+    const maxKbLength = 12000; // Unified limit for all platforms
     const systemPrompt = generateSystemPrompt(botSettings, platform, maxKbLength);
     
     const completion = await Promise.race([
@@ -389,7 +380,19 @@ export async function processChatMessage(
     const elapsed = Date.now() - startTime;
     const platformTag = platform ? `[${platform.toUpperCase()}]` : '';
     console.log(`${platformTag} ✅ OpenAI API response received in ${elapsed}ms`);
-    return completion.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
+    
+    // Normalize response text: remove excessive line breaks
+    let response = completion.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
+    
+    // Normalize multiple consecutive newlines (3+ newlines become 2, 2+ newlines become 1)
+    // This prevents excessive spacing while preserving intentional paragraph breaks
+    response = response.replace(/\n{3,}/g, '\n\n'); // 3+ newlines -> 2 newlines
+    response = response.replace(/\n{2}/g, '\n'); // 2 newlines -> 1 newline
+    
+    // Trim leading/trailing whitespace and newlines
+    response = response.trim();
+    
+    return response;
   } catch (error: any) {
     // If timeout and prompt is too long, try with shorter knowledge base
     if (error.message?.includes('timeout')) {
@@ -421,7 +424,18 @@ export async function processChatMessage(
 
         const elapsed = Date.now() - startTime;
         console.log(`✅ OpenAI API response received (fallback) in ${elapsed}ms`);
-        return completion.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
+        
+        // Normalize response text: remove excessive line breaks
+        let response = completion.choices[0]?.message?.content || 'Sorry, I could not generate a response.';
+        
+        // Normalize multiple consecutive newlines (3+ newlines become 2, 2+ newlines become 1)
+        response = response.replace(/\n{3,}/g, '\n\n'); // 3+ newlines -> 2 newlines
+        response = response.replace(/\n{2}/g, '\n'); // 2 newlines -> 1 newline
+        
+        // Trim leading/trailing whitespace and newlines
+        response = response.trim();
+        
+        return response;
       } catch (fallbackError: any) {
         console.error('❌ Fallback also failed:', fallbackError);
         throw new Error('Request timeout. Please try again.');
