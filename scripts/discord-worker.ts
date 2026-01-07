@@ -45,6 +45,9 @@ const botInstances = new Map<string, Client>();
 // Track rate limit errors to avoid retrying too soon
 const rateLimitErrors = new Map<string, { resetAt: Date; retryCount: number }>();
 
+// Track bots that are currently processing messages (to prevent restart)
+const processingMessages = new Set<string>();
+
 /**
  * Connect to MongoDB
  */
@@ -393,8 +396,16 @@ async function startBot(botId: string) {
   // Register messageCreate handler BEFORE login
   // Use botId from closure instead of botSettings to load fresh settings each time
   console.log(`[DISCORD] 📝 Registering messageCreate event handler for botId: ${botId}...`);
-  client.on('messageCreate', async (message) => {
+  
+  // Remove any existing handlers first to avoid duplicates
+  client.removeAllListeners('messageCreate');
+  
+  const messageHandler = async (message: DiscordMessage) => {
     try {
+      // ALWAYS log when handler is called, even if bot not ready
+      console.log(`[DISCORD] 🔔🔔🔔 messageCreate event triggered! 🔔🔔🔔`);
+      console.log(`[DISCORD] 📨 Handler called for botId: ${botId}, botReady: ${client.isReady()}`);
+      
       // Check if bot is ready before processing
       if (!client.isReady()) {
         console.log(`[DISCORD] ⏳ Bot not ready yet, skipping message from ${message.author.tag}`);
@@ -402,7 +413,6 @@ async function startBot(botId: string) {
       }
       
       // Debug: Log ALL messages received (even from bots to verify events work)
-      console.log(`[DISCORD] 🔔🔔🔔 messageCreate event triggered! 🔔🔔🔔`);
       console.log(`[DISCORD] 📨 Message details:`, {
         author: message.author.tag,
         authorId: message.author.id,
@@ -430,9 +440,18 @@ async function startBot(botId: string) {
         }
         console.log(`[DISCORD] ✅ Bot settings loaded: ${freshBotSettings.name} (${freshBotSettings.botId})`);
         
-        console.log(`[DISCORD] 📤 Calling handleMessage...`);
-        await handleMessage(client, freshBotSettings, message);
-        console.log(`[DISCORD] ✅ handleMessage completed`);
+        // Mark bot as processing message
+        processingMessages.add(botId);
+        try {
+          console.log(`[DISCORD] 📤 Calling handleMessage...`);
+          await handleMessage(client, freshBotSettings, message);
+          console.log(`[DISCORD] ✅ handleMessage completed`);
+        } finally {
+          // Remove processing flag after a delay to allow message to be sent
+          setTimeout(() => {
+            processingMessages.delete(botId);
+          }, 5000);
+        }
       } else {
         console.log(`[DISCORD] ⏭️ Skipping bot message from: ${message.author.tag}`);
       }
@@ -445,8 +464,14 @@ async function startBot(botId: string) {
         cause: error instanceof Error ? error.cause : undefined
       });
     }
-  });
+  };
+  
+  client.on('messageCreate', messageHandler);
   console.log(`[DISCORD] ✅ messageCreate event handler registered for botId: ${botId}`);
+  
+  // Verify handler is registered
+  const listenerCount = client.listenerCount('messageCreate');
+  console.log(`[DISCORD] ✅ Verified: messageCreate has ${listenerCount} listener(s)`);
   
   // Add debug logging for other events to verify bot is receiving events
   // These events don't require MESSAGE CONTENT INTENT, so if we see these but not messageCreate,
@@ -559,6 +584,28 @@ async function startBot(botId: string) {
       console.log(`[DISCORD] ✅ Bot is READY and connected`);
       console.log(`[DISCORD] 📊 Bot user: ${client.user?.tag} (${client.user?.id})`);
       console.log(`[DISCORD] 📊 Bot is in ${client.guilds.cache.size} server(s)`);
+      
+      // Verify messageCreate handler is still registered after login
+      const listenerCount = client.listenerCount('messageCreate');
+      console.log(`[DISCORD] ✅ After login: messageCreate has ${listenerCount} listener(s)`);
+      if (listenerCount === 0) {
+        console.error(`[DISCORD] ❌❌❌ CRITICAL: messageCreate handler was lost after login! Re-registering...`);
+        // Re-register handler
+        client.on('messageCreate', async (message) => {
+          console.log(`[DISCORD] 🔔🔔🔔 messageCreate event triggered (re-registered)! 🔔🔔🔔`);
+          if (!client.isReady()) {
+            console.log(`[DISCORD] ⏳ Bot not ready yet, skipping message`);
+            return;
+          }
+          if (!message.author.bot) {
+            const freshBotSettings = await getBotSettings(botId);
+            if (freshBotSettings) {
+              await handleMessage(client, freshBotSettings, message);
+            }
+          }
+        });
+        console.log(`[DISCORD] ✅ messageCreate handler re-registered`);
+      }
     } else {
       console.log(`[DISCORD] ⚠️ Bot logged in but not ready yet`);
     }
@@ -715,6 +762,12 @@ async function main() {
               // Clear cache and reload
               workerBotSettings.delete(bot.botId);
               
+              // Check if bot is currently processing a message
+              if (processingMessages.has(bot.botId)) {
+                console.log(`[DISCORD] ⏳ Bot ${bot.botId} is currently processing a message, skipping restart`);
+                continue;
+              }
+              
               // Restart bot to load new settings
               const client = botInstances.get(bot.botId);
               if (client) {
@@ -727,6 +780,7 @@ async function main() {
                     console.error(`[DISCORD] ⚠️ Error destroying client:`, destroyError);
                   }
                   botInstances.delete(bot.botId);
+                  processingMessages.delete(bot.botId);
                   // Add delay before restarting to avoid immediate retry
                   await new Promise(resolve => setTimeout(resolve, 3000));
                   await startBot(bot.botId);
