@@ -356,6 +356,16 @@ async function startBot(botId: string) {
     console.log(`[DISCORD] 🆔 Bot ID: ${client.user?.id}`);
     console.log(`[DISCORD] ✅ Bot is ready and listening for messages`);
     
+    // CRITICAL: Verify messageCreate handler is still registered after ready
+    const listenerCountAfterReady = client.listenerCount('messageCreate');
+    console.log(`[DISCORD] ✅ After ready: messageCreate has ${listenerCountAfterReady} listener(s)`);
+    if (listenerCountAfterReady === 0) {
+      console.error(`[DISCORD] ❌❌❌ CRITICAL: messageCreate handler was lost after ready! Re-registering...`);
+      // Re-register handler
+      client.on('messageCreate', messageHandler);
+      console.log(`[DISCORD] ✅ messageCreate handler re-registered after ready`);
+    }
+    
     // Verify intents are actually enabled
     const intents = client.options.intents;
     const intentsValue = intents ? Number(intents) : 0;
