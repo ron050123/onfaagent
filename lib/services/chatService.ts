@@ -183,9 +183,10 @@ function truncateKnowledgeBase(kb: string, maxLength: number): string {
   let faqsSection = faqsMatch ? `FAQs:\n${faqsMatch[1]}\n\n` : '';
   const kbWithoutFaqs = kb.replace(/FAQs:\n[\s\S]*?\n\n/, '');
   
-  // Reserve space: 40% for FAQs, 60% for other sections (URLs, Documents, Structured Data)
-  const faqsMaxLength = Math.floor(maxLength * 0.4); // 40% for FAQs
-  const otherSectionsMaxLength = maxLength - faqsMaxLength - 200; // 60% for other sections, reserve 200 for separators
+  // Reserve space: 70% for FAQs (they're most important), 30% for other sections (URLs, Documents, Structured Data)
+  // Increased FAQs allocation to ensure important information is not lost
+  const faqsMaxLength = Math.floor(maxLength * 0.7); // 70% for FAQs (increased from 40%)
+  const otherSectionsMaxLength = maxLength - faqsMaxLength - 200; // 30% for other sections, reserve 200 for separators
   
   // Truncate FAQs if they exceed their allocated space
   if (faqsSection.length > faqsMaxLength) {
@@ -316,20 +317,24 @@ export function generateSystemPrompt(botSettings: IBotSettings, platform?: strin
   // Unified platform context for all platforms to ensure consistent responses
   const platformContext = 'Provide informative answers with key details and relevant information. Balance between being comprehensive and concise. Be helpful, friendly, and professional.';
 
-  // Enhanced prompt structure for balanced responses
+  // Enhanced prompt structure for balanced responses with STRONG emphasis on using knowledge base
   const prompt = `You are ${botSettings.name}, a helpful and knowledgeable chatbot.
 
 Knowledge Base:
 ${knowledgeBase}
 
-Instructions:
-- Answer questions based EXACTLY on the knowledge base above
-- Provide informative answers with key details and relevant information
-- Include important points from the knowledge base but keep it well-organized
-- Be helpful and thorough while avoiding unnecessary verbosity
-- If the knowledge base contains information about the topic, provide a complete answer
-- Only say "I don't have that information" if the knowledge base truly doesn't contain relevant information
-- ${platformContext}`;
+CRITICAL INSTRUCTIONS:
+- You MUST answer questions based EXACTLY on the knowledge base provided above
+- ALWAYS search through the knowledge base FIRST before responding
+- The knowledge base contains FAQs, documents, URLs, and structured data - USE THEM
+- If you find ANY relevant information in the knowledge base (even partial matches), provide that information
+- DO NOT say "I don't have that information" unless you have thoroughly searched the entire knowledge base and found NOTHING related
+- When answering, cite specific information from the knowledge base (e.g., "According to the FAQs..." or "Based on the knowledge base...")
+- If the user asks about something that appears in the knowledge base (even with different wording), find and provide the relevant answer
+- Be helpful, thorough, and provide complete answers from the knowledge base
+- ${platformContext}
+
+Remember: The knowledge base above contains real information. Your job is to find and present it accurately.`;
   
   // Debug: Log prompt length with platform context
   console.log(`${platformTag} 📝 System prompt length: ${prompt.length} chars`);
@@ -406,8 +411,9 @@ export async function processChatMessage(
   // Try with optimized knowledge base first
   try {
     // Use unified knowledge base size for all platforms to ensure consistent responses
-    // All platforms now use 12000 chars for consistency
-    const maxKbLength = 12000; // Unified limit for all platforms
+    // Increased from 12000 to 30000 to accommodate large FAQs (338 items = ~34k chars)
+    // This ensures FAQs are not truncated too much and bot can find information
+    const maxKbLength = 30000; // Increased limit to accommodate large FAQs
     const systemPrompt = generateSystemPrompt(botSettings, platform, maxKbLength);
     
     const completion = await Promise.race([
