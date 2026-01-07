@@ -178,37 +178,90 @@ export function buildKnowledgeBase(botSettings: IBotSettings, maxLength?: number
 function truncateKnowledgeBase(kb: string, maxLength: number): string {
   if (kb.length <= maxLength) return kb;
   
-  // Extract FAQs section first - it must be preserved in full
+  // Extract FAQs section first - it must be preserved but can be truncated if too large
   const faqsMatch = kb.match(/FAQs:\n([\s\S]*?)(?=\n\n(?:Document|Web Content|Structured Data) Knowledge Base:|$)/);
-  const faqsSection = faqsMatch ? `FAQs:\n${faqsMatch[1]}\n\n` : '';
+  let faqsSection = faqsMatch ? `FAQs:\n${faqsMatch[1]}\n\n` : '';
   const kbWithoutFaqs = kb.replace(/FAQs:\n[\s\S]*?\n\n/, '');
   
-  // Calculate available space for other sections (reserve space for FAQs)
-  const availableLength = maxLength - faqsSection.length - 200; // Reserve 200 chars for separators and notes
+  // Reserve space: 40% for FAQs, 60% for other sections (URLs, Documents, Structured Data)
+  const faqsMaxLength = Math.floor(maxLength * 0.4); // 40% for FAQs
+  const otherSectionsMaxLength = maxLength - faqsMaxLength - 200; // 60% for other sections, reserve 200 for separators
   
-  if (availableLength <= 0) {
-    // If FAQs alone exceed maxLength, return FAQs only (they're most important)
-    console.warn('⚠️ FAQs section alone exceeds maxLength, returning FAQs only');
-    return faqsSection + '\n\n[Note: Other knowledge base sections truncated due to size limits, but FAQs are complete]';
+  // Truncate FAQs if they exceed their allocated space
+  if (faqsSection.length > faqsMaxLength) {
+    console.warn(`⚠️ FAQs section (${faqsSection.length} chars) exceeds allocated space (${faqsMaxLength} chars), truncating...`);
+    // Truncate FAQs intelligently - try to keep complete Q&A pairs
+    const faqsContent = faqsSection.replace('FAQs:\n', '').replace(/\n\n$/, '');
+    const faqsPairs = faqsContent.split(/\n\n/);
+    let truncatedFaqs = 'FAQs:\n';
+    let currentLength = 7; // "FAQs:\n" length
+    
+    for (const pair of faqsPairs) {
+      if (currentLength + pair.length + 2 > faqsMaxLength) {
+        // Add note about truncation
+        truncatedFaqs += `\n\n[Note: ${faqsPairs.length - truncatedFaqs.split(/\n\n/).length + 1} more FAQs available but truncated due to size limits]`;
+        break;
+      }
+      truncatedFaqs += (truncatedFaqs !== 'FAQs:\n' ? '\n\n' : '') + pair;
+      currentLength += pair.length + 2;
+    }
+    faqsSection = truncatedFaqs + '\n\n';
+  }
+  
+  if (otherSectionsMaxLength <= 0) {
+    // If FAQs take up all space, return FAQs only
+    console.warn('⚠️ FAQs section takes up all available space, returning FAQs only');
+    return faqsSection + '\n\n[Note: Other knowledge base sections truncated due to size limits]';
   }
   
   // Truncate other sections (documents, URLs, structured data) intelligently
-  const sections = kbWithoutFaqs.split(/\n---/);
-  let result = faqsSection; // Start with FAQs
+  // Prioritize URLs over documents and structured data
+  const urlSectionMatch = kbWithoutFaqs.match(/Web Content Knowledge Base:\n([\s\S]*?)(?=\n\n(?:Document|Structured Data) Knowledge Base:|$)/);
+  const docSectionMatch = kbWithoutFaqs.match(/Document Knowledge Base:\n([\s\S]*?)(?=\n\n(?:Web Content|Structured Data) Knowledge Base:|$)/);
+  const structSectionMatch = kbWithoutFaqs.match(/Structured Data Knowledge Base:\n([\s\S]*?)$/);
   
-  for (const section of sections) {
-    if (result.length + section.length + 10 > maxLength) {
-      // Add partial section if there's room
-      const remaining = maxLength - result.length - 50;
-      if (remaining > 100) {
-        result += '\n---' + section.substring(0, remaining) + '...[truncated]';
-      }
-      break;
+  let result = faqsSection; // Start with FAQs
+  let remainingLength = otherSectionsMaxLength;
+  
+  // Add URLs first (they're important)
+  if (urlSectionMatch && remainingLength > 100) {
+    const urlSection = `Web Content Knowledge Base:\n${urlSectionMatch[1]}\n\n`;
+    if (urlSection.length <= remainingLength) {
+      result += urlSection;
+      remainingLength -= urlSection.length;
+    } else {
+      // Truncate URLs section
+      const truncatedUrls = urlSection.substring(0, remainingLength - 50) + '...[truncated]\n\n';
+      result += truncatedUrls;
+      remainingLength = 0;
     }
-    result += (result && !result.endsWith('\n\n') ? '\n---' : '') + section;
   }
   
-  return result + '\n\n[Note: FAQs section is complete. Other sections may be truncated for performance]';
+  // Add Documents if space available
+  if (docSectionMatch && remainingLength > 100) {
+    const docSection = `Document Knowledge Base:\n${docSectionMatch[1]}\n\n`;
+    if (docSection.length <= remainingLength) {
+      result += docSection;
+      remainingLength -= docSection.length;
+    } else {
+      const truncatedDocs = docSection.substring(0, remainingLength - 50) + '...[truncated]\n\n';
+      result += truncatedDocs;
+      remainingLength = 0;
+    }
+  }
+  
+  // Add Structured Data if space available
+  if (structSectionMatch && remainingLength > 100) {
+    const structSection = `Structured Data Knowledge Base:\n${structSectionMatch[1]}\n\n`;
+    if (structSection.length <= remainingLength) {
+      result += structSection;
+    } else {
+      const truncatedStruct = structSection.substring(0, remainingLength - 50) + '...[truncated]\n\n';
+      result += truncatedStruct;
+    }
+  }
+  
+  return result.trim() + '\n\n[Note: Knowledge base sections prioritized: FAQs > URLs > Documents > Structured Data]';
 }
 
 // Reusable OpenAI client instances per API key for connection reuse

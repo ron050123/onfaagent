@@ -156,9 +156,12 @@ async function populateBots() {
     await mongoose.connect(process.env.MONGODB_URI!);
     console.log('Connected to MongoDB');
 
-    // Clear existing bots (optional - remove this if you want to keep existing data)
-    await BotSettings.deleteMany({});
-    console.log('Cleared existing bots');
+    // WARNING: This script will DELETE ALL EXISTING BOTS!
+    // Uncomment the line below ONLY if you want to clear all bots
+    // await BotSettings.deleteMany({});
+    // console.log('Cleared existing bots');
+    console.log('⚠️  WARNING: populate-bots script will NOT delete existing bots by default');
+    console.log('   To clear bots, uncomment the deleteMany line in the script');
 
     // Generate 100 bots
     const bots = [];

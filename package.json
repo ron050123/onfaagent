@@ -19,6 +19,8 @@
     "delete-bot": "tsx scripts/delete-bot.ts",
     "check-kb": "tsx scripts/check-knowledge-base-source.ts",
     "inspect-bot": "tsx scripts/inspect-bot-content.ts",
+    "verify-bot": "tsx scripts/verify-bot-settings.ts",
+    "check-platforms": "tsx scripts/check-all-platforms.ts",
     "clear-cache": "tsx scripts/clear-cache.ts",
     "clear-cache:all": "tsx scripts/clear-cache.ts --all"
   },

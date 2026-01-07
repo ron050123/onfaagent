@@ -290,7 +290,10 @@ async function handleWhatsAppWebMessage(botId: string, msg: any) {
     botSettings = cached.settings;
     console.log(`[WHATSAPP] Using cached bot settings for: ${botId}`);
   } else {
-    botSettings = await BotSettings.findOne({ botId }).select('botId name userId welcomeMessage faqs documents urls structuredData updatedAt').lean() as any;
+    botSettings = await BotSettings.findOne({ 
+      botId,
+      'whatsapp.enabled': true 
+    }).select('botId name userId whatsapp welcomeMessage faqs documents urls structuredData updatedAt').lean() as any;
     if (botSettings) {
       botSettingsCache.set(cacheKey, { settings: botSettings, timestamp: Date.now() });
       console.log(`[WHATSAPP] Loaded bot settings from database for: ${botId}`);
