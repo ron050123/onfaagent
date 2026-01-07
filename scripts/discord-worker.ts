@@ -497,7 +497,7 @@ async function startBot(botId: string) {
   });
   
   // Log all raw events to see what Discord is sending
-  client.on('raw', (event) => {
+  client.on('raw', async (event) => {
     if (event.t === 'MESSAGE_CREATE' || event.t === 'TYPING_START') {
       console.log(`[DISCORD] 📡 Raw event received: ${event.t}`, {
         type: event.t,
@@ -509,8 +509,8 @@ async function startBot(botId: string) {
       });
       
       // If we receive MESSAGE_CREATE but messageCreate handler doesn't fire,
-      // it means MESSAGE CONTENT INTENT is not enabled or there's a parsing issue
-      if (event.t === 'MESSAGE_CREATE') {
+      // manually trigger handler as fallback
+      if (event.t === 'MESSAGE_CREATE' && event.d) {
         console.log(`[DISCORD] ⚠️ Raw MESSAGE_CREATE received - checking if messageCreate handler will fire...`);
         console.log(`[DISCORD] ⚠️ If you don't see "🔔🔔🔔 messageCreate event triggered!" next, MESSAGE CONTENT INTENT may not be enabled`);
         console.log(`[DISCORD] ⚠️ Check Discord Developer Portal → Bot → Privileged Gateway Intents → MESSAGE CONTENT INTENT`);
@@ -530,6 +530,34 @@ async function startBot(botId: string) {
           console.log(`[DISCORD] ⚠️ You MUST enable MESSAGE CONTENT INTENT in Discord Developer Portal and RE-INVITE the bot!`);
         } else {
           console.log(`[DISCORD] ✅ Raw MESSAGE_CREATE has content field - MESSAGE CONTENT INTENT appears to be enabled`);
+          
+          // FALLBACK: If handler doesn't fire after 1 second, manually process the message
+          setTimeout(async () => {
+            const listenerCount = client.listenerCount('messageCreate');
+            console.log(`[DISCORD] 🔍 Checking if messageCreate handler was triggered... (${listenerCount} listeners)`);
+            
+            // Try to get the message from cache
+            try {
+              const channelId = event.d.channel_id;
+              const messageId = event.d.id;
+              
+              if (channelId && messageId && client.isReady()) {
+                const channel = await client.channels.fetch(channelId).catch(() => null);
+                if (channel && channel.isTextBased()) {
+                  const message = await (channel as any).messages.fetch(messageId).catch(() => null);
+                  if (message && !message.author.bot) {
+                    console.log(`[DISCORD] 🔄 FALLBACK: Manually processing message from raw event`);
+                    const freshBotSettings = await getBotSettings(botId);
+                    if (freshBotSettings) {
+                      await handleMessage(client, freshBotSettings, message);
+                    }
+                  }
+                }
+              }
+            } catch (fallbackError) {
+              console.error(`[DISCORD] ❌ Error in fallback handler:`, fallbackError);
+            }
+          }, 2000);
         }
       }
     }
