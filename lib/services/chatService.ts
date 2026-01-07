@@ -178,41 +178,29 @@ export function buildKnowledgeBase(botSettings: IBotSettings, maxLength?: number
 function truncateKnowledgeBase(kb: string, maxLength: number): string {
   if (kb.length <= maxLength) return kb;
   
-  // Extract FAQs section first - it must be preserved but can be truncated if too large
+  // Extract FAQs section first - FAQs MUST NEVER be truncated, they are the most important
   const faqsMatch = kb.match(/FAQs:\n([\s\S]*?)(?=\n\n(?:Document|Web Content|Structured Data) Knowledge Base:|$)/);
-  let faqsSection = faqsMatch ? `FAQs:\n${faqsMatch[1]}\n\n` : '';
+  const faqsSection = faqsMatch ? `FAQs:\n${faqsMatch[1]}\n\n` : '';
   const kbWithoutFaqs = kb.replace(/FAQs:\n[\s\S]*?\n\n/, '');
   
-  // Reserve space: 70% for FAQs (they're most important), 30% for other sections (URLs, Documents, Structured Data)
-  // Increased FAQs allocation to ensure important information is not lost
-  const faqsMaxLength = Math.floor(maxLength * 0.7); // 70% for FAQs (increased from 40%)
-  const otherSectionsMaxLength = maxLength - faqsMaxLength - 200; // 30% for other sections, reserve 200 for separators
+  // CRITICAL: FAQs are NEVER truncated - they take priority over everything else
+  // If FAQs alone exceed maxLength, we still include them fully (they're that important)
+  // Only truncate other sections (URLs, Documents, Structured Data)
+  const faqsLength = faqsSection.length;
   
-  // Truncate FAQs if they exceed their allocated space
-  if (faqsSection.length > faqsMaxLength) {
-    console.warn(`⚠️ FAQs section (${faqsSection.length} chars) exceeds allocated space (${faqsMaxLength} chars), truncating...`);
-    // Truncate FAQs intelligently - try to keep complete Q&A pairs
-    const faqsContent = faqsSection.replace('FAQs:\n', '').replace(/\n\n$/, '');
-    const faqsPairs = faqsContent.split(/\n\n/);
-    let truncatedFaqs = 'FAQs:\n';
-    let currentLength = 7; // "FAQs:\n" length
-    
-    for (const pair of faqsPairs) {
-      if (currentLength + pair.length + 2 > faqsMaxLength) {
-        // Add note about truncation
-        truncatedFaqs += `\n\n[Note: ${faqsPairs.length - truncatedFaqs.split(/\n\n/).length + 1} more FAQs available but truncated due to size limits]`;
-        break;
-      }
-      truncatedFaqs += (truncatedFaqs !== 'FAQs:\n' ? '\n\n' : '') + pair;
-      currentLength += pair.length + 2;
-    }
-    faqsSection = truncatedFaqs + '\n\n';
+  // If FAQs alone exceed maxLength, return FAQs only (they're more important than other sections)
+  if (faqsLength >= maxLength) {
+    console.warn(`⚠️ FAQs section (${faqsLength} chars) exceeds maxLength (${maxLength} chars), but FAQs are NEVER truncated - returning FAQs only`);
+    return faqsSection + '\n\n[Note: FAQs are prioritized and never truncated. Other knowledge base sections (URLs, Documents, Structured Data) are excluded to ensure all FAQs are available.]';
   }
   
-  if (otherSectionsMaxLength <= 0) {
-    // If FAQs take up all space, return FAQs only
+  // Calculate remaining space for other sections after FAQs
+  const remainingLengthForOthers = maxLength - faqsLength - 200; // Reserve 200 for separators/notes
+  
+  // If no space left for other sections after FAQs, return FAQs only
+  if (remainingLengthForOthers <= 0) {
     console.warn('⚠️ FAQs section takes up all available space, returning FAQs only');
-    return faqsSection + '\n\n[Note: Other knowledge base sections truncated due to size limits]';
+    return faqsSection + '\n\n[Note: FAQs are prioritized and never truncated. Other knowledge base sections truncated due to size limits]';
   }
   
   // Truncate other sections (documents, URLs, structured data) intelligently
@@ -221,8 +209,8 @@ function truncateKnowledgeBase(kb: string, maxLength: number): string {
   const docSectionMatch = kbWithoutFaqs.match(/Document Knowledge Base:\n([\s\S]*?)(?=\n\n(?:Web Content|Structured Data) Knowledge Base:|$)/);
   const structSectionMatch = kbWithoutFaqs.match(/Structured Data Knowledge Base:\n([\s\S]*?)$/);
   
-  let result = faqsSection; // Start with FAQs
-  let remainingLength = otherSectionsMaxLength;
+  let result = faqsSection; // Start with FAQs (NEVER truncated)
+  let remainingLength = remainingLengthForOthers; // Use the calculated remainingLengthForOthers
   
   // Add URLs first (they're important)
   if (urlSectionMatch && remainingLength > 100) {
@@ -317,24 +305,29 @@ export function generateSystemPrompt(botSettings: IBotSettings, platform?: strin
   // Unified platform context for all platforms to ensure consistent responses
   const platformContext = 'Provide informative answers with key details and relevant information. Balance between being comprehensive and concise. Be helpful, friendly, and professional.';
 
-  // Enhanced prompt structure for balanced responses with STRONG emphasis on using knowledge base
+  // Enhanced prompt structure with EXTREMELY STRONG emphasis on using knowledge base
+  // This prompt is designed to force the AI to search thoroughly before saying "I don't know"
   const prompt = `You are ${botSettings.name}, a helpful and knowledgeable chatbot.
 
 Knowledge Base:
 ${knowledgeBase}
 
-CRITICAL INSTRUCTIONS:
-- You MUST answer questions based EXACTLY on the knowledge base provided above
-- ALWAYS search through the knowledge base FIRST before responding
-- The knowledge base contains FAQs, documents, URLs, and structured data - USE THEM
-- If you find ANY relevant information in the knowledge base (even partial matches), provide that information
-- DO NOT say "I don't have that information" unless you have thoroughly searched the entire knowledge base and found NOTHING related
-- When answering, cite specific information from the knowledge base (e.g., "According to the FAQs..." or "Based on the knowledge base...")
-- If the user asks about something that appears in the knowledge base (even with different wording), find and provide the relevant answer
-- Be helpful, thorough, and provide complete answers from the knowledge base
-- ${platformContext}
+CRITICAL INSTRUCTIONS - READ CAREFULLY:
+1. MANDATORY SEARCH: You MUST search through the ENTIRE knowledge base above before responding to ANY question
+2. USE KNOWLEDGE BASE: The knowledge base contains FAQs, documents, URLs, and structured data - you MUST use them
+3. MATCHING LOGIC: If the user's question matches ANY part of the knowledge base (even partial matches, synonyms, or related terms), you MUST provide that information
+4. NEVER SAY "I DON'T KNOW" unless you have searched EVERY section (FAQs, Documents, URLs, Structured Data) and found ABSOLUTELY NOTHING related
+5. SEARCH EXAMPLES:
+   - If user asks "The Golden Era", search for: "Golden Era", "golden era", "Golden", "Era", "NFT", "mining", "khai thác"
+   - If user asks "Wonderful Holiday", search for: "Wonderful", "Holiday", "wonderful", "holiday", "NFT", "collection"
+   - If user asks about any NFT, search ALL FAQs for that NFT name, related terms, and synonyms
+6. ANSWER FORMAT: When you find information, provide it directly and clearly. Cite the source if helpful (e.g., "According to the FAQs..." or "Based on the knowledge base...")
+7. COMPLETE ANSWERS: Provide complete answers with all relevant details from the knowledge base
+8. BE THOROUGH: Read through ALL FAQs carefully - they contain the most important information
 
-Remember: The knowledge base above contains real information. Your job is to find and present it accurately.`;
+REMEMBER: The knowledge base above is YOUR ONLY SOURCE OF INFORMATION. If information exists there, you MUST find it and provide it. Only say "I don't have that information" if you have searched EVERYTHING and found NOTHING.
+
+${platformContext}`;
   
   // Debug: Log prompt length with platform context
   console.log(`${platformTag} 📝 System prompt length: ${prompt.length} chars`);
@@ -411,9 +404,9 @@ export async function processChatMessage(
   // Try with optimized knowledge base first
   try {
     // Use unified knowledge base size for all platforms to ensure consistent responses
-    // Increased from 12000 to 30000 to accommodate large FAQs (338 items = ~34k chars)
-    // This ensures FAQs are not truncated too much and bot can find information
-    const maxKbLength = 30000; // Increased limit to accommodate large FAQs
+    // Increased to 50000 to ensure FAQs (338 items = ~34k chars) are NEVER truncated
+    // FAQs are the most important and must be included in full for accurate responses
+    const maxKbLength = 50000; // Increased limit to ensure FAQs are never truncated
     const systemPrompt = generateSystemPrompt(botSettings, platform, maxKbLength);
     
     const completion = await Promise.race([

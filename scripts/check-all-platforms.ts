@@ -68,7 +68,7 @@ async function checkAllPlatforms() {
 
       for (const platform of platforms) {
         try {
-          const kb = buildKnowledgeBase(bot as any, 12000); // Same limit for all platforms
+          const kb = buildKnowledgeBase(bot as any, 50000); // Increased to 50000 to ensure FAQs are never truncated
           kbResults[platform] = {
             length: kb.length,
             hasFaqs: kb.includes('FAQs:'),
@@ -88,7 +88,7 @@ async function checkAllPlatforms() {
         }
       }
 
-      console.log(`\n🌐 Knowledge Base by Platform (max 12000 chars each):`);
+      console.log(`\n🌐 Knowledge Base by Platform (max 50000 chars each, FAQs NEVER truncated):`);
       for (const platform of platforms) {
         const result = kbResults[platform];
         console.log(`   ${platform.toUpperCase().padEnd(10)}: ${result.length.toString().padStart(6)} chars | FAQs: ${result.hasFaqs ? '✅' : '❌'} | Docs: ${result.hasDocs ? '✅' : '❌'} | URLs: ${result.hasUrls ? '✅' : '❌'} | Struct: ${result.hasStruct ? '✅' : '❌'}`);
@@ -118,7 +118,8 @@ async function checkAllPlatforms() {
     console.log('='.repeat(80));
     console.log('\n💡 Summary:');
     console.log('   - All platforms use the same buildKnowledgeBase() function');
-    console.log('   - All platforms use the same maxKbLength (12000 chars)');
+    console.log('   - All platforms use the same maxKbLength (50000 chars)');
+    console.log('   - FAQs are NEVER truncated - they take priority over all other sections');
     console.log('   - All platforms load the same botSettings from database');
     console.log('   - Knowledge base is shared across all platforms');
     console.log('   - Only platform-specific differences are in system prompt context\n');
