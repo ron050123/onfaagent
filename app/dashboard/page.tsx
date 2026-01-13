@@ -84,6 +84,20 @@ interface DiscordSettings {
   webhookSetAt?: string
 }
 
+interface ZaloSettings {
+  enabled?: boolean
+  appId?: string
+  appSecret?: string
+  accessToken?: string
+  apiToken?: string
+  securityToken?: string
+  oaId?: string
+  oaName?: string
+  webhookUrl?: string
+  webhookSetAt?: string
+  verifyToken?: string
+}
+
 interface BotSettings {
   _id?: string
   botId: string
@@ -99,6 +113,7 @@ interface BotSettings {
   messenger?: MessengerSettings
   whatsapp?: WhatsAppSettings
   discord?: DiscordSettings
+  zalo?: ZaloSettings
   createdAt?: string
 }
 
@@ -121,7 +136,7 @@ export default function DashboardPage() {
   const [isLoading, setIsLoading] = useState(false)
   const [copiedBotId, setCopiedBotId] = useState<string | null>(null)
   const [showCreateForm, setShowCreateForm] = useState(false)
-  const [activeTab, setActiveTab] = useState<'faq' | 'documents' | 'urls' | 'structured' | 'telegram' | 'messenger' | 'whatsapp' | 'discord'>('faq')
+  const [activeTab, setActiveTab] = useState<'faq' | 'documents' | 'urls' | 'structured' | 'telegram' | 'messenger' | 'whatsapp' | 'discord' | 'zalo'>('faq')
   const [newUrl, setNewUrl] = useState('')
   const [newUrlCategory, setNewUrlCategory] = useState('')
   const [newUrlTags, setNewUrlTags] = useState('')
@@ -212,6 +227,17 @@ export default function DashboardPage() {
   const [discordGuildId, setDiscordGuildId] = useState('')
   const [discordLoading, setDiscordLoading] = useState(false)
 
+  // Zalo state
+  const [zaloAppId, setZaloAppId] = useState('')
+  const [zaloAppSecret, setZaloAppSecret] = useState('')
+  const [zaloApiToken, setZaloApiToken] = useState('') // Direct API token
+  const [zaloSecurityToken, setZaloSecurityToken] = useState('') // Security token
+  const [zaloWebhookUrl, setZaloWebhookUrl] = useState('') // Custom webhook URL
+  const [zaloVerifyToken, setZaloVerifyToken] = useState('')
+  const [zaloUseDirectToken, setZaloUseDirectToken] = useState(false) // Toggle between App ID/Secret and direct token
+  const [zaloLoading, setZaloLoading] = useState(false)
+  const [zaloOAInfo, setZaloOAInfo] = useState<any>(null)
+
   useEffect(() => {
     if (status === 'unauthenticated') {
       router.push('/login')
@@ -238,6 +264,15 @@ export default function DashboardPage() {
     setDisplayedBots(allBots.slice(0, botsToShow))
     setBots(allBots.slice(0, botsToShow))
   }, [allBots, botsToShow])
+
+  // Monitor selectedBot.zalo.enabled changes for debugging
+  useEffect(() => {
+    if (selectedBot) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:267',message:'selectedBot.zalo.enabled changed',data:{botId:selectedBot?.botId,zaloEnabled:selectedBot?.zalo?.enabled,hasZalo:!!selectedBot?.zalo,zaloObject:JSON.stringify(selectedBot?.zalo)},timestamp:Date.now(),sessionId:'debug-session',runId:'run4',hypothesisId:'G'})}).catch(()=>{});
+      // #endregion
+    }
+  }, [selectedBot?.zalo?.enabled, selectedBot?.botId])
 
 
   const loadBots = async (page = 1, search = '', sortByField = 'createdAt', sortOrderField = 'desc', loadMore = false) => {
@@ -388,6 +423,17 @@ export default function DashboardPage() {
     setTelegramToken(bot.telegram?.botToken || '')
     setTelegramWebhookUrl('')
     setTelegramBotInfo(null)
+    setDiscordToken(bot.discord?.botToken || '')
+    setDiscordClientId(bot.discord?.clientId || '')
+    setDiscordGuildId(bot.discord?.guildId || '')
+    setZaloAppId(bot.zalo?.appId || '')
+    setZaloAppSecret(bot.zalo?.appSecret || '')
+    setZaloApiToken(bot.zalo?.apiToken || '')
+    setZaloSecurityToken(bot.zalo?.securityToken || '')
+    setZaloWebhookUrl(bot.zalo?.webhookUrl || '')
+    setZaloVerifyToken(bot.zalo?.verifyToken || '')
+    setZaloUseDirectToken(!!bot.zalo?.apiToken)
+    setZaloOAInfo(bot.zalo?.oaId ? { oaId: bot.zalo.oaId, oaName: bot.zalo.oaName } : null)
     setMessengerPageToken(bot.messenger?.pageAccessToken || '')
     setMessengerVerifyToken(bot.messenger?.verifyToken || '')
     setMessengerAppSecret(bot.messenger?.appSecret || '')
@@ -1161,6 +1207,232 @@ export default function DashboardPage() {
     }
   }
 
+  // Zalo handlers
+  const handleGetZaloOAInfo = async () => {
+    if (!zaloAppId.trim() || !zaloAppSecret.trim()) return
+
+    setZaloLoading(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    try {
+      const response = await fetch('/api/zalo/oa-info', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          appId: zaloAppId.trim(),
+          appSecret: zaloAppSecret.trim()
+        })
+      })
+
+      if (response.ok) {
+        const data = await response.json()
+        setZaloOAInfo(data.oaInfo)
+        setSuccessMessage(`Thông tin OA: ${data.oaInfo.oaName} (ID: ${data.oaInfo.oaId})`)
+        setTimeout(() => setSuccessMessage(''), 5000)
+      } else {
+        const error = await response.json()
+        setErrorMessage(error.error || 'Không thể lấy thông tin OA')
+        setZaloOAInfo(null)
+      }
+    } catch (error: any) {
+      setErrorMessage('Lỗi khi lấy thông tin OA: ' + (error.message || 'Unknown error'))
+      setZaloOAInfo(null)
+    } finally {
+      setZaloLoading(false)
+    }
+  }
+
+  const handleEnableZalo = async () => {
+    if (!selectedBot) return
+    
+    // Validate based on mode
+    if (zaloUseDirectToken) {
+      if (!zaloApiToken.trim() || !zaloSecurityToken.trim() || !zaloWebhookUrl.trim()) {
+        setErrorMessage('API Token, Security Token, và Webhook URL đều bắt buộc')
+        setTimeout(() => setErrorMessage(''), 3000)
+        return
+      }
+    } else {
+      if (!zaloAppId.trim() || !zaloAppSecret.trim()) {
+        setErrorMessage('App ID và App Secret đều bắt buộc')
+        setTimeout(() => setErrorMessage(''), 3000)
+        return
+      }
+    }
+
+    setZaloLoading(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    try {
+      const requestBody: any = {
+        botId: selectedBot.botId
+      }
+
+      if (zaloUseDirectToken) {
+        requestBody.apiToken = zaloApiToken.trim()
+        requestBody.securityToken = zaloSecurityToken.trim()
+        requestBody.webhookUrl = zaloWebhookUrl.trim()
+      } else {
+        requestBody.appId = zaloAppId.trim()
+        requestBody.appSecret = zaloAppSecret.trim()
+        if (zaloWebhookUrl.trim()) {
+          requestBody.webhookUrl = zaloWebhookUrl.trim()
+        }
+        if (zaloVerifyToken.trim()) {
+          requestBody.verifyToken = zaloVerifyToken.trim()
+        }
+      }
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1279',message:'Before fetch to set-webhook',data:{requestBodySize:JSON.stringify(requestBody).length,useDirectToken:zaloUseDirectToken},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'A'})}).catch(()=>{});
+      // #endregion
+      const response = await fetch('/api/zalo/set-webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify(requestBody)
+      })
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1285',message:'After fetch, before parsing',data:{ok:response.ok,status:response.status,statusText:response.statusText,hasBody:!!response.body},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      if (response.ok) {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1286',message:'Before response.json() on success',data:{},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+        const data = await response.json()
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1286',message:'After response.json() success',data:{hasWebhookUrl:!!data.webhookUrl,hasSuccess:!!data.success,responseSize:JSON.stringify(data).length,zaloEnabled:data.zalo?.enabled},timestamp:Date.now(),sessionId:'debug-session',runId:'run3',hypothesisId:'F'})}).catch(()=>{});
+        // #endregion
+        const botResponse = await fetch(`/api/bot-settings?botId=${selectedBot.botId}`)
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1308',message:'After fetching bot response',data:{ok:botResponse.ok,status:botResponse.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run4',hypothesisId:'G'})}).catch(()=>{});
+        // #endregion
+        let updatedBot: any = null
+        if (!botResponse.ok) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1312',message:'Bot fetch failed',data:{status:botResponse.status,statusText:botResponse.statusText},timestamp:Date.now(),sessionId:'debug-session',runId:'run4',hypothesisId:'G'})}).catch(()=>{});
+          // #endregion
+          console.error('Failed to fetch updated bot:', botResponse.statusText)
+          // Use the data from the set-webhook response instead
+          if (data.zalo) {
+            updatedBot = selectedBot ? { ...selectedBot, zalo: data.zalo } : null
+          }
+        } else {
+          updatedBot = await botResponse.json()
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1320',message:'After fetching updated bot',data:{botId:updatedBot?.botId,zaloEnabled:updatedBot?.zalo?.enabled,hasZalo:!!updatedBot?.zalo,zaloObject:JSON.stringify(updatedBot?.zalo)},timestamp:Date.now(),sessionId:'debug-session',runId:'run4',hypothesisId:'G'})}).catch(()=>{});
+          // #endregion
+        }
+        
+        // Update state with the bot data
+        if (updatedBot) {
+          // Also merge zalo data from response if available (ensures enabled is set)
+          if (data.zalo && data.zalo.enabled) {
+            updatedBot = { ...updatedBot, zalo: { ...updatedBot.zalo, ...data.zalo, enabled: true } }
+            // #region agent log
+            fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1327',message:'Merging zalo data from response',data:{zaloEnabled:updatedBot.zalo?.enabled},timestamp:Date.now(),sessionId:'debug-session',runId:'run4',hypothesisId:'G'})}).catch(()=>{});
+            // #endregion
+          }
+          setSelectedBot(updatedBot)
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1331',message:'After setSelectedBot called',data:{updatedBotZaloEnabled:updatedBot?.zalo?.enabled,updatedBotHasZalo:!!updatedBot?.zalo,zaloObject:JSON.stringify(updatedBot?.zalo)},timestamp:Date.now(),sessionId:'debug-session',runId:'run4',hypothesisId:'G'})}).catch(()=>{});
+          // #endregion
+          setAllBots(prev => prev.map(bot => bot.botId === selectedBot.botId ? updatedBot : bot))
+        }
+        setSuccessMessage(`Zalo bot đã được kích hoạt! Webhook: ${data.webhookUrl || zaloWebhookUrl}`)
+        setTimeout(() => setSuccessMessage(''), 5000)
+      } else {
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1293',message:'Before response.json() on error',data:{status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+        // #endregion
+        let error;
+        try {
+          error = await response.json()
+        } catch (parseError: any) {
+          // #region agent log
+          fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1293',message:'Error parsing error response',data:{parseError:parseError.message,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run2',hypothesisId:'B'})}).catch(()=>{});
+          // #endregion
+          error = { error: `HTTP ${response.status}: ${response.statusText}` };
+        }
+        setErrorMessage(error.error || 'Không thể kích hoạt Zalo bot')
+      }
+    } catch (error: any) {
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1296',message:'Error caught in catch block',data:{errorMessage:error.message,errorName:error.name,isJsonError:error.message?.includes('JSON')||error.message?.includes('json')},timestamp:Date.now(),sessionId:'debug-session',runId:'run1',hypothesisId:'B'})}).catch(()=>{});
+      // #endregion
+      setErrorMessage('Lỗi khi kích hoạt Zalo bot: ' + (error.message || 'Unknown error'))
+    } finally {
+      setZaloLoading(false)
+    }
+  }
+
+  const handleDisableZalo = async () => {
+    if (!selectedBot) return
+
+    setZaloLoading(true)
+    setErrorMessage('')
+    setSuccessMessage('')
+
+    // #region agent log
+    fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1378',message:'Before delete webhook fetch',data:{botId:selectedBot.botId,hasZalo:!!selectedBot.zalo,zaloEnabled:selectedBot.zalo?.enabled,hasApiToken:!!selectedBot.zalo?.apiToken},timestamp:Date.now(),sessionId:'debug-session',runId:'run6',hypothesisId:'I'})}).catch(()=>{});
+    // #endregion
+    try {
+      const response = await fetch('/api/zalo/delete-webhook', {
+        method: 'POST',
+        headers: { 'Content-Type': 'application/json' },
+        body: JSON.stringify({
+          botId: selectedBot.botId
+        })
+      })
+
+      // #region agent log
+      fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1379',message:'After delete webhook fetch',data:{ok:response.ok,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run6',hypothesisId:'I'})}).catch(()=>{});
+      // #endregion
+
+      if (response.ok) {
+        const data = await response.json()
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1387',message:'Delete webhook success',data:{message:data.message},timestamp:Date.now(),sessionId:'debug-session',runId:'run6',hypothesisId:'I'})}).catch(()=>{});
+        // #endregion
+        const updatedBot = await fetch(`/api/bot-settings?botId=${selectedBot.botId}`).then(r => r.json())
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1388',message:'After fetching updated bot',data:{zaloEnabled:updatedBot?.zalo?.enabled},timestamp:Date.now(),sessionId:'debug-session',runId:'run6',hypothesisId:'I'})}).catch(()=>{});
+        // #endregion
+        setSelectedBot(updatedBot)
+        setAllBots(prev => prev.map(bot => bot.botId === selectedBot.botId ? updatedBot : bot))
+        setSuccessMessage(data.message || 'Đã vô hiệu hóa Zalo bot thành công!')
+        setZaloAppId('')
+        setZaloAppSecret('')
+        setZaloApiToken('')
+        setZaloSecurityToken('')
+        setZaloWebhookUrl('')
+        setZaloVerifyToken('')
+        setZaloOAInfo(null)
+        setZaloUseDirectToken(false)
+        setTimeout(() => setSuccessMessage(''), 5000)
+      } else {
+        let error;
+        try {
+          error = await response.json()
+        } catch (parseError: any) {
+          error = { error: `HTTP ${response.status}: ${response.statusText}` };
+        }
+        // #region agent log
+        fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:1405',message:'Delete webhook error',data:{error:error.error,status:response.status},timestamp:Date.now(),sessionId:'debug-session',runId:'run6',hypothesisId:'I'})}).catch(()=>{});
+        // #endregion
+        setErrorMessage(error.error || 'Không thể vô hiệu hóa Zalo bot')
+        setTimeout(() => setErrorMessage(''), 5000)
+      }
+    } catch (error) {
+      setErrorMessage('Lỗi kết nối. Vui lòng thử lại.')
+      setTimeout(() => setErrorMessage(''), 5000)
+    } finally {
+      setZaloLoading(false)
+    }
+  }
+
   const handleGetWhatsAppQRCode = async () => {
     if (!selectedBot) return
 
@@ -1742,7 +2014,8 @@ export default function DashboardPage() {
                           { id: 'telegram', name: 'Telegram', fullName: 'Telegram Bot', icon: Send },
                           { id: 'messenger', name: 'Messenger', fullName: 'Messenger Bot', icon: MessageCircle },
                           { id: 'whatsapp', name: 'WhatsApp', fullName: 'WhatsApp Web Bot', icon: MessageSquare },
-                          { id: 'discord', name: 'Discord', fullName: 'Discord Bot', icon: MessageCircle }
+                          { id: 'discord', name: 'Discord', fullName: 'Discord Bot', icon: MessageCircle },
+                          { id: 'zalo', name: 'Zalo', fullName: 'Zalo Official Account', icon: MessageCircle }
                         ].map((tab) => {
                           const Icon = tab.icon
                           return (
@@ -2777,6 +3050,409 @@ export default function DashboardPage() {
                                 <>
                                   <MessageCircle className="w-4 h-4 mr-2" />
                                   Kích hoạt Discord Bot
+                                </>
+                              )}
+                            </Button>
+                          )}
+                        </div>
+                      </div>
+                    )}
+
+                    {/* Zalo Tab */}
+                    {activeTab === 'zalo' && (
+                      <div className="space-y-6">
+                        <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                          <div className="flex items-start">
+                            <div className="w-5 h-5 bg-blue-500 rounded-full flex items-center justify-center mr-3 mt-0.5">
+                              <span className="text-white text-xs font-bold">i</span>
+                            </div>
+                            <div className="flex-1">
+                              <h4 className="font-semibold text-blue-900 mb-2">Hướng dẫn tích hợp Zalo Official Account</h4>
+                              <div className="text-sm text-blue-800 space-y-2">
+                                <p><strong>Hai phương thức kết nối:</strong></p>
+                                <p><strong>Phương thức 1 - App ID/Secret (OAuth):</strong></p>
+                                <ol className="list-decimal ml-4 space-y-1">
+                                  <li>Tạo Zalo Official Account tại <a href="https://oa.zalo.me/manage" target="_blank" rel="noopener noreferrer" className="underline">Zalo OA Management</a></li>
+                                  <li>Vào Developer Console → API để lấy App ID và App Secret</li>
+                                  <li>Chọn "App ID/Secret" và nhập thông tin</li>
+                                  <li>Nhấn "Lấy thông tin OA" để xác minh</li>
+                                  <li>Nhấn "Kích hoạt Zalo Bot" - webhook sẽ được thiết lập tự động</li>
+                                </ol>
+                                <p><strong>Phương thức 2 - API Token (Direct):</strong></p>
+                                <ol className="list-decimal ml-4 space-y-1">
+                                  <li>Nếu bạn đã có HTTP API Token, Security Token, và Webhook URL từ Zalo</li>
+                                  <li>Chọn "API Token" và nhập các thông tin</li>
+                                  <li>Đảm bảo webhook đã được cấu hình trong Zalo Developer Console</li>
+                                  <li>Nhấn "Kích hoạt Zalo Bot"</li>
+                                </ol>
+                                <p className="text-blue-600 font-medium">✨ Bot sẽ tự động trả lời tin nhắn từ người dùng Zalo dựa trên FAQs và knowledge base của bạn!</p>
+                                <p className="text-yellow-700 font-medium">⚠️ Lưu ý: Cần HTTPS cho webhook trong production. Sử dụng ngrok cho local development.</p>
+                                <p className="text-xs text-blue-700 mt-2">
+                                  💡 Xem hướng dẫn chi tiết: <code className="bg-blue-100 px-1 rounded">docs/ZALO_DIRECT_TOKEN_SETUP.md</code>
+                                </p>
+                              </div>
+                            </div>
+                          </div>
+                        </div>
+
+                        {/* Error/Success Messages */}
+                        {errorMessage && (
+                          <div className="p-4 bg-red-50 border border-red-200 text-red-800 rounded-md">
+                            <div className="flex items-center">
+                              <div className="text-red-500 text-lg mr-2">⚠️</div>
+                              {errorMessage}
+                            </div>
+                          </div>
+                        )}
+                        
+                        {successMessage && (
+                          <div className="p-4 bg-green-50 border border-green-200 text-green-800 rounded-md">
+                            <div className="flex items-center">
+                              <div className="text-green-500 text-lg mr-2">✅</div>
+                              {successMessage}
+                            </div>
+                          </div>
+                        )}
+
+                        {/* Connection Mode Toggle */}
+                        <div className="space-y-4">
+                          <div className="bg-gray-50 border border-gray-200 rounded-lg p-4">
+                            <div className="flex items-center justify-between">
+                              <div>
+                                <Label className="text-sm font-semibold text-gray-700 mb-1 block">
+                                  Phương thức kết nối
+                                </Label>
+                                <p className="text-xs text-gray-500">
+                                  Chọn cách kết nối với Zalo
+                                </p>
+                              </div>
+                              <div className="flex items-center space-x-2">
+                                <button
+                                  type="button"
+                                  onClick={() => setZaloUseDirectToken(false)}
+                                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                    !zaloUseDirectToken
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                  }`}
+                                  disabled={selectedBot?.zalo?.enabled}
+                                >
+                                  App ID/Secret
+                                </button>
+                                <button
+                                  type="button"
+                                  onClick={() => setZaloUseDirectToken(true)}
+                                  className={`px-4 py-2 rounded-md text-sm font-medium transition-colors ${
+                                    zaloUseDirectToken
+                                      ? 'bg-blue-600 text-white'
+                                      : 'bg-gray-200 text-gray-700 hover:bg-gray-300'
+                                  }`}
+                                  disabled={selectedBot?.zalo?.enabled}
+                                >
+                                  API Token
+                                </button>
+                              </div>
+                            </div>
+                          </div>
+
+                          {/* Direct API Token Mode */}
+                          {zaloUseDirectToken ? (
+                            <>
+                              <div>
+                                <Label htmlFor="zalo-api-token" className="text-sm font-semibold text-gray-700 mb-2 block">
+                                  HTTP API Token <span className="text-red-500">*</span>
+                                </Label>
+                                <Input
+                                  id="zalo-api-token"
+                                  type="password"
+                                  value={zaloApiToken}
+                                  onChange={(e) => {
+                                    if (selectedBot?.zalo?.enabled) {
+                                      // #region agent log
+                                      fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:3147',message:'Input onChange blocked - bot enabled',data:{disabled:true,zaloEnabled:selectedBot?.zalo?.enabled},timestamp:Date.now(),sessionId:'debug-session',runId:'run5',hypothesisId:'H'})}).catch(()=>{});
+                                      // #endregion
+                                      return; // Prevent changes when disabled
+                                    }
+                                    setZaloApiToken(e.target.value)
+                                  }}
+                                  placeholder="Your HTTP API token from Zalo"
+                                  className="flex-1 border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                                  disabled={selectedBot?.zalo?.enabled}
+                                  readOnly={selectedBot?.zalo?.enabled}
+                                  // #region agent log
+                                  onFocus={() => fetch('http://127.0.0.1:7242/ingest/c60d4391-f97d-4f8f-b40f-56a2b2915eba',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify({location:'app/dashboard/page.tsx:3150',message:'Input focus - disabled state',data:{disabled:selectedBot?.zalo?.enabled,readOnly:selectedBot?.zalo?.enabled,zaloEnabled:selectedBot?.zalo?.enabled,hasSelectedBot:!!selectedBot,hasZalo:!!selectedBot?.zalo},timestamp:Date.now(),sessionId:'debug-session',runId:'run5',hypothesisId:'H'})}).catch(()=>{})}
+                                  // #endregion
+                                />
+                                <p className="mt-1 text-xs text-gray-500">
+                                  HTTP API Token từ Zalo Developer Console
+                                </p>
+                              </div>
+
+                              <div>
+                                <Label htmlFor="zalo-security-token" className="text-sm font-semibold text-gray-700 mb-2 block">
+                                  Security Token <span className="text-red-500">*</span>
+                                </Label>
+                                <Input
+                                  id="zalo-security-token"
+                                  type="password"
+                                  value={zaloSecurityToken}
+                                  onChange={(e) => {
+                                    if (selectedBot?.zalo?.enabled) return;
+                                    setZaloSecurityToken(e.target.value)
+                                  }}
+                                  placeholder="Your security token for webhook verification"
+                                  className="flex-1 border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                                  disabled={selectedBot?.zalo?.enabled}
+                                  readOnly={selectedBot?.zalo?.enabled}
+                                />
+                                <p className="mt-1 text-xs text-gray-500">
+                                  Security Token để xác minh webhook với Zalo
+                                </p>
+                              </div>
+
+                              <div>
+                                <Label htmlFor="zalo-webhook-url" className="text-sm font-semibold text-gray-700 mb-2 block">
+                                  Webhook URL <span className="text-red-500">*</span>
+                                </Label>
+                                <Input
+                                  id="zalo-webhook-url"
+                                  type="text"
+                                  value={zaloWebhookUrl}
+                                  onChange={(e) => {
+                                    if (selectedBot?.zalo?.enabled) return;
+                                    setZaloWebhookUrl(e.target.value)
+                                  }}
+                                  placeholder="https://yourdomain.com/api/zalo/webhook"
+                                  className="flex-1 border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                                  disabled={selectedBot?.zalo?.enabled}
+                                  readOnly={selectedBot?.zalo?.enabled}
+                                />
+                                <p className="mt-1 text-xs text-gray-500">
+                                  Webhook URL đã được cấu hình trong Zalo Developer Console
+                                </p>
+                              </div>
+                            </>
+                          ) : (
+                            <>
+                              {/* App ID/Secret Mode */}
+                              <div>
+                                <Label htmlFor="zalo-app-id" className="text-sm font-semibold text-gray-700 mb-2 block">
+                                  App ID
+                                </Label>
+                            <Input
+                              id="zalo-app-id"
+                              type="text"
+                              value={zaloAppId}
+                              onChange={(e) => {
+                                if (selectedBot?.zalo?.enabled) return;
+                                setZaloAppId(e.target.value)
+                              }}
+                              placeholder="1234567890123456789"
+                              className="flex-1 border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                              disabled={selectedBot?.zalo?.enabled}
+                              readOnly={selectedBot?.zalo?.enabled}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              App ID từ Zalo Developer Console
+                            </p>
+                          </div>
+
+                          <div>
+                            <Label htmlFor="zalo-app-secret" className="text-sm font-semibold text-gray-700 mb-2 block">
+                              App Secret
+                            </Label>
+                            <Input
+                              id="zalo-app-secret"
+                              type="password"
+                              value={zaloAppSecret}
+                              onChange={(e) => {
+                                if (selectedBot?.zalo?.enabled) return;
+                                setZaloAppSecret(e.target.value)
+                              }}
+                              placeholder="xxxxxxxxxxxxxxxxxxxxxxxxxxxxx"
+                              className="flex-1 border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                              disabled={selectedBot?.zalo?.enabled}
+                              readOnly={selectedBot?.zalo?.enabled}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              App Secret được lưu trữ an toàn và chỉ dùng để kết nối với Zalo API
+                            </p>
+                          </div>
+
+                          <div>
+                            <Label htmlFor="zalo-webhook-url-custom" className="text-sm font-semibold text-gray-700 mb-2 block">
+                              Webhook URL (Tùy chọn - để trống để tự động tạo)
+                            </Label>
+                            <Input
+                              id="zalo-webhook-url-custom"
+                              type="text"
+                              value={zaloWebhookUrl}
+                              onChange={(e) => {
+                                if (selectedBot?.zalo?.enabled) return;
+                                setZaloWebhookUrl(e.target.value)
+                              }}
+                              placeholder="https://yourdomain.com/api/zalo/webhook"
+                              className="flex-1 border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                              disabled={selectedBot?.zalo?.enabled}
+                              readOnly={selectedBot?.zalo?.enabled}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              Webhook URL tùy chỉnh (ví dụ từ ngrok). Để trống để tự động tạo từ cấu hình.
+                            </p>
+                          </div>
+
+                          <div>
+                            <Label htmlFor="zalo-verify-token" className="text-sm font-semibold text-gray-700 mb-2 block">
+                              Verify Token (Tùy chọn)
+                            </Label>
+                            <Input
+                              id="zalo-verify-token"
+                              type="text"
+                              value={zaloVerifyToken}
+                              onChange={(e) => {
+                                if (selectedBot?.zalo?.enabled) return;
+                                setZaloVerifyToken(e.target.value)
+                              }}
+                              placeholder="my_verify_token_123"
+                              className="flex-1 border border-gray-200 rounded-md focus:ring-2 focus:ring-blue-500 focus:border-blue-500 font-mono text-sm"
+                              disabled={selectedBot?.zalo?.enabled}
+                              readOnly={selectedBot?.zalo?.enabled}
+                            />
+                            <p className="mt-1 text-xs text-gray-500">
+                              Token này sẽ được dùng để xác minh webhook với Zalo (tự động tạo nếu để trống)
+                            </p>
+                          </div>
+
+                          {/* Get OA Info Button */}
+                          {!selectedBot?.zalo?.enabled && zaloAppId && zaloAppSecret && (
+                            <Button
+                              onClick={handleGetZaloOAInfo}
+                              disabled={!zaloAppId.trim() || !zaloAppSecret.trim() || zaloLoading}
+                              variant="outline"
+                              className="w-full"
+                            >
+                              {zaloLoading ? 'Đang kiểm tra...' : 'Lấy thông tin OA'}
+                            </Button>
+                          )}
+                            </>
+                          )}
+
+                          {/* Test Webhook Button (for testing without OA) */}
+                          {!selectedBot?.zalo?.enabled && (
+                            <div className="bg-yellow-50 border border-yellow-200 rounded-lg p-4">
+                              <h4 className="font-medium text-yellow-900 mb-2">🧪 Test Mode (Không cần OA)</h4>
+                              <p className="text-sm text-yellow-800 mb-3">
+                                Bạn có thể test bot mà không cần tạo OA. Sử dụng endpoint test để mô phỏng webhook từ Zalo.
+                              </p>
+                              <Button
+                                onClick={async () => {
+                                  if (!selectedBot) return
+                                  setZaloLoading(true)
+                                  setErrorMessage('')
+                                  setSuccessMessage('')
+                                  try {
+                                    const response = await fetch(`/api/zalo/test-webhook?botId=${selectedBot.botId}`, {
+                                      method: 'POST',
+                                      headers: { 'Content-Type': 'application/json' },
+                                      body: JSON.stringify({ text: 'Xin chào, đây là tin nhắn test' })
+                                    })
+                                    const data = await response.json()
+                                    if (response.ok) {
+                                      setSuccessMessage('✅ Test thành công! Kiểm tra terminal/logs để xem phản hồi của bot.')
+                                      setTimeout(() => setSuccessMessage(''), 5000)
+                                    } else {
+                                      setErrorMessage(data.error || 'Test thất bại')
+                                      setTimeout(() => setErrorMessage(''), 5000)
+                                    }
+                                  } catch (error: any) {
+                                    setErrorMessage('Lỗi khi test: ' + (error.message || 'Unknown error'))
+                                    setTimeout(() => setErrorMessage(''), 5000)
+                                  } finally {
+                                    setZaloLoading(false)
+                                  }
+                                }}
+                                disabled={zaloLoading || !selectedBot}
+                                variant="outline"
+                                className="w-full border-yellow-300 text-yellow-700 hover:bg-yellow-100"
+                              >
+                                {zaloLoading ? 'Đang test...' : '🧪 Test Webhook (Không cần OA)'}
+                              </Button>
+                              <p className="text-xs text-yellow-700 mt-2">
+                                💡 Xem hướng dẫn chi tiết trong <code className="bg-yellow-100 px-1 rounded">docs/ZALO_TESTING.md</code>
+                              </p>
+                            </div>
+                          )}
+
+                          {/* OA Info Display */}
+                          {zaloOAInfo && (
+                            <div className="bg-blue-50 border border-blue-200 rounded-lg p-4">
+                              <h4 className="font-medium text-blue-900 mb-2">Thông tin Official Account</h4>
+                              <p className="text-sm text-blue-700">
+                                <strong>OA ID:</strong> {zaloOAInfo.oaId}
+                              </p>
+                              <p className="text-sm text-blue-700">
+                                <strong>Tên OA:</strong> {zaloOAInfo.oaName}
+                              </p>
+                            </div>
+                          )}
+
+                          {/* Current Status */}
+                          {selectedBot?.zalo?.enabled && (
+                            <div className="bg-green-50 border border-green-200 rounded-lg p-4">
+                              <div className="flex items-center justify-between">
+                                <div>
+                                  <h4 className="font-medium text-green-900 mb-1">✅ Zalo Bot đã được kích hoạt</h4>
+                                  <p className="text-sm text-green-700">
+                                    App ID: <strong>{selectedBot.zalo.appId}</strong>
+                                  </p>
+                                  {selectedBot.zalo.oaId && (
+                                    <p className="text-sm text-green-700">
+                                      OA ID: <strong>{selectedBot.zalo.oaId}</strong>
+                                    </p>
+                                  )}
+                                  {selectedBot.zalo.oaName && (
+                                    <p className="text-sm text-green-700">
+                                      OA Name: <strong>{selectedBot.zalo.oaName}</strong>
+                                    </p>
+                                  )}
+                                  {selectedBot.zalo.webhookUrl && (
+                                    <p className="text-sm text-green-700 mt-2">
+                                      Webhook: <code className="bg-green-100 px-1 rounded text-xs">{selectedBot.zalo.webhookUrl}</code>
+                                    </p>
+                                  )}
+                                </div>
+                                <Button
+                                  onClick={handleDisableZalo}
+                                  disabled={zaloLoading}
+                                  variant="outline"
+                                  className="text-red-600 border-red-200 hover:bg-red-50"
+                                >
+                                  {zaloLoading ? 'Đang xử lý...' : 'Vô hiệu hóa'}
+                                </Button>
+                              </div>
+                            </div>
+                          )}
+
+                          {/* Activate Button */}
+                          {!selectedBot?.zalo?.enabled && (
+                            <Button
+                              onClick={handleEnableZalo}
+                              disabled={
+                                zaloUseDirectToken
+                                  ? !zaloApiToken.trim() || !zaloSecurityToken.trim() || !zaloWebhookUrl.trim() || zaloLoading
+                                  : (!zaloAppId.trim() || !zaloAppSecret.trim() || zaloLoading)
+                              }
+                              className="w-full bg-gradient-to-r from-blue-600 to-cyan-600 hover:from-blue-700 hover:to-cyan-700 text-white"
+                            >
+                              {zaloLoading ? (
+                                <>
+                                  <div className="w-4 h-4 mr-2 animate-spin rounded-full border-2 border-white border-t-transparent"></div>
+                                  Đang kích hoạt...
+                                </>
+                              ) : (
+                                <>
+                                  <MessageCircle className="w-4 h-4 mr-2" />
+                                  Kích hoạt Zalo Bot
                                 </>
                               )}
                             </Button>

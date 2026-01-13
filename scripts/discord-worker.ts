@@ -14,9 +14,13 @@
 
 import { Client, GatewayIntentBits, Message as DiscordMessage, ChannelType } from 'discord.js';
 import mongoose from 'mongoose';
+import dotenv from 'dotenv';
 import BotSettings from '../lib/models/BotSettings';
 import Message from '../lib/models/Message';
 import { processChatMessage } from '../lib/services/chatService';
+
+// Load environment variables from .env.local file
+dotenv.config({ path: '.env.local' });
 
 // Environment variables
 const MONGODB_URI = process.env.MONGODB_URI;

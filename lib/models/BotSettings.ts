@@ -75,6 +75,20 @@ export interface IDiscordSettings {
   webhookSetAt?: Date;
 }
 
+export interface IZaloSettings {
+  enabled: boolean;
+  appId?: string;
+  appSecret?: string;
+  accessToken?: string;
+  apiToken?: string; // Direct API token (HTTP API token)
+  securityToken?: string; // Security token for webhook verification
+  oaId?: string;
+  oaName?: string;
+  webhookUrl?: string;
+  webhookSetAt?: Date;
+  verifyToken?: string;
+}
+
 export interface IBotSettings extends Document {
   botId: string;
   userId: string;
@@ -90,6 +104,7 @@ export interface IBotSettings extends Document {
   messenger?: IMessengerSettings;
   whatsapp?: IWhatsAppSettings;
   discord?: IDiscordSettings;
+  zalo?: IZaloSettings;
   createdAt: Date;
   updatedAt: Date;
 }
@@ -194,6 +209,19 @@ const BotSettingsSchema = new Schema<IBotSettings>({
     guildId: { type: String },
     webhookUrl: { type: String },
     webhookSetAt: { type: Date }
+  },
+  zalo: {
+    enabled: { type: Boolean, default: false },
+    appId: { type: String },
+    appSecret: { type: String },
+    accessToken: { type: String },
+    apiToken: { type: String }, // Direct API token (HTTP API token)
+    securityToken: { type: String }, // Security token for webhook verification
+    oaId: { type: String },
+    oaName: { type: String },
+    webhookUrl: { type: String },
+    webhookSetAt: { type: Date },
+    verifyToken: { type: String }
   }
 }, {
   timestamps: true
@@ -206,6 +234,9 @@ BotSettingsSchema.index({ 'telegram.enabled': 1, 'telegram.botToken': 1 });
 BotSettingsSchema.index({ botId: 1, 'whatsapp.enabled': 1 });
 BotSettingsSchema.index({ botId: 1, 'whatsapp.accessToken': 1 });
 BotSettingsSchema.index({ 'whatsapp.enabled': 1, 'whatsapp.accessToken': 1 });
+BotSettingsSchema.index({ botId: 1, 'zalo.enabled': 1 });
+BotSettingsSchema.index({ botId: 1, 'zalo.appId': 1 });
+BotSettingsSchema.index({ 'zalo.enabled': 1, 'zalo.appId': 1 });
 
 // Prevent re-compilation during development
 export default mongoose.models.BotSettings || mongoose.model<IBotSettings>('BotSettings', BotSettingsSchema);
